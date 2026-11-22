@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n.dart';
 import '../main.dart';
 import '../models.dart';
 import '../session.dart';
@@ -18,10 +19,10 @@ class Section extends StatelessWidget {
       if (title != null)
         Padding(
           padding: const EdgeInsetsDirectional.fromSTEB(8, 18, 8, 8),
-          child: Text(title!, style: const TextStyle(color: C.muted, fontSize: 13, fontWeight: FontWeight.w700)),
+          child: Text(title!, style: TextStyle(color: context.pal.muted, fontSize: 13, fontWeight: FontWeight.w700)),
         ),
       Material(
-        color: C.surface,
+        color: context.pal.surface,
         borderRadius: BorderRadius.circular(18),
         clipBehavior: Clip.antiAlias,
         child: Column(children: [
@@ -50,17 +51,19 @@ void toast(BuildContext context, String msg) {
     ..showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
 }
 
-Future<bool> confirm(BuildContext context, String title, String body, {String ok = 'تأیید', bool danger = false}) async {
+Future<bool> confirm(BuildContext context, String title, String body, {String? ok, bool danger = false}) async {
+  final s = S.of(context);
+  final p = context.pal;
   final r = await showDialog<bool>(
     context: context,
     builder: (c) => AlertDialog(
       title: Text(title),
       content: Text(body),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('انصراف')),
+        TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s['cancel'])),
         TextButton(
           onPressed: () => Navigator.pop(c, true),
-          child: Text(ok, style: TextStyle(color: danger ? C.red : C.accent, fontWeight: FontWeight.w700)),
+          child: Text(ok ?? s['ok'], style: TextStyle(color: danger ? p.red : p.accent, fontWeight: FontWeight.w700)),
         ),
       ],
     ),
@@ -73,34 +76,34 @@ Future<bool> hostKeyPrompt(String type, String fp, String? old) async {
   final ctx = navKey.currentContext;
   if (ctx == null) return false;
   final changed = old != null;
+  final s = S.of(ctx);
+  final p = ctx.pal;
   final r = await showDialog<bool>(
     context: ctx,
     barrierDismissible: false,
     builder: (c) => AlertDialog(
       scrollable: true,
       icon: Icon(changed ? Icons.gpp_bad_outlined : Icons.verified_user_outlined,
-          color: changed ? C.red : C.green, size: 36),
-      title: Text(changed ? 'کلید سرور عوض شده!' : 'سرور جدید'),
+          color: changed ? p.red : p.green, size: 36),
+      title: Text(changed ? s['hostKeyChangedTitle'] : s['hostKeyNewTitle']),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(changed
-            ? 'کلید این سرور با دفعه قبل فرق دارد. اگر سرور را دوباره نصب نکرده‌اید، ممکن است کسی وسط راه باشد.'
-            : 'اولین بار است به این سرور وصل می‌شوید. اثر انگشت کلید سرور:'),
+        Text(changed ? s['hostKeyChangedBody'] : s['hostKeyNewBody']),
         const SizedBox(height: 12),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: C.bg, borderRadius: BorderRadius.circular(10)),
+          decoration: BoxDecoration(color: p.bg, borderRadius: BorderRadius.circular(10)),
           child: Text('$type\n$fp',
               textDirection: TextDirection.ltr,
-              style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11.5, color: C.muted)),
+              style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11.5, color: p.muted)),
         ),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('رد کردن')),
+        TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s['reject'])),
         TextButton(
           onPressed: () => Navigator.pop(c, true),
-          child: Text(changed ? 'به هر حال وصل شو' : 'اعتماد و اتصال',
-              style: TextStyle(color: changed ? C.red : C.accent, fontWeight: FontWeight.w700)),
+          child: Text(changed ? s['connectAnyway'] : s['trustConnect'],
+              style: TextStyle(color: changed ? p.red : p.accent, fontWeight: FontWeight.w700)),
         ),
       ],
     ),
@@ -108,9 +111,79 @@ Future<bool> hostKeyPrompt(String type, String fp, String? old) async {
   return r ?? false;
 }
 
+/// Asks for a server password (none saved, or the saved one was rejected),
+/// with "Remember password" ticked by default.
+Future<PasswordAnswer?> passwordPrompt(Host h, {bool wrong = false}) async {
+  final ctx = navKey.currentContext;
+  if (ctx == null) return null;
+  final s = S.of(ctx);
+  final p = ctx.pal;
+  final pw = TextEditingController();
+  var remember = true;
+  var show = false;
+  void submit(BuildContext c) {
+    if (pw.text.isEmpty) return;
+    Navigator.pop(c, PasswordAnswer(pw.text, remember: remember));
+  }
+
+  final r = await showDialog<PasswordAnswer>(
+    context: ctx,
+    barrierDismissible: false,
+    builder: (c) => StatefulBuilder(
+      builder: (c, setState) => AlertDialog(
+        scrollable: true,
+        icon: Icon(wrong ? Icons.lock_reset : Icons.lock_outline, color: wrong ? p.red : p.accent, size: 32),
+        title: Text(s['pwTitle']),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Ltr(h.address, style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12.5, color: p.muted)),
+          if (wrong) ...[
+            const SizedBox(height: 8),
+            Text(s['pwWrong'], style: TextStyle(color: p.red, fontSize: 13)),
+          ],
+          const SizedBox(height: 14),
+          TextField(
+            key: const ValueKey('pw-field'),
+            controller: pw,
+            autofocus: true,
+            obscureText: !show,
+            autocorrect: false,
+            enableSuggestions: false,
+            textDirection: TextDirection.ltr,
+            onSubmitted: (_) => submit(c),
+            decoration: InputDecoration(
+              labelText: s['password'],
+              suffixIcon: IconButton(
+                icon: Icon(show ? Icons.visibility_off : Icons.visibility, color: p.muted),
+                onPressed: () => setState(() => show = !show),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          CheckboxListTile(
+            value: remember,
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(s['rememberPw']),
+            onChanged: (v) => setState(() => remember = v ?? true),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(s['cancel'])),
+          TextButton(
+            onPressed: () => submit(c),
+            child: Text(s['connect'], style: TextStyle(color: p.accent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    ),
+  );
+  // pw is not disposed here: the dialog's exit animation still uses it.
+  return r;
+}
+
 /// Opens a new SSH session to [h] and shows its terminal.
 void openHost(BuildContext context, Host h) {
-  final s = Sessions.i.open(h);
+  final s = Sessions.i.open(h)..passwordPrompt = passwordPrompt;
   Navigator.of(context).push(MaterialPageRoute(builder: (_) => TerminalScreen(session: s)));
   s.connect(hostKeyPrompt);
 }
@@ -126,7 +199,8 @@ class HostAvatar extends StatelessWidget {
   final double size;
   @override
   Widget build(BuildContext context) {
-    final c = C.hostColors[color % C.hostColors.length];
+    final c = Palette.hostColors[color % Palette.hostColors.length];
+    final p = context.pal;
     return Stack(clipBehavior: Clip.none, children: [
       Container(
         width: size,
@@ -141,8 +215,8 @@ class HostAvatar extends StatelessWidget {
           child: Container(
             width: 13,
             height: 13,
-            decoration: BoxDecoration(
-                color: C.green, shape: BoxShape.circle, border: Border.all(color: C.surface, width: 2.5)),
+            decoration:
+                BoxDecoration(color: p.green, shape: BoxShape.circle, border: Border.all(color: p.surface, width: 2.5)),
           ),
         ),
     ]);

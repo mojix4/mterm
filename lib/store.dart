@@ -5,10 +5,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'l10n.dart';
 import 'models.dart';
 
 class AppSettings {
-  String theme = 'Termius';
+  /// Terminal colour scheme; 'Auto' follows the app's light/dark mode.
+  String theme = 'Auto';
+
+  /// App theme: system | dark | light.
+  String appTheme = 'system';
+
+  /// UI language: 'system' or a code from languageCodes.
+  String language = 'system';
   double fontSize = 13;
   String cursor = 'block'; // block | underline | bar
   int scrollback = 5000;
@@ -27,6 +35,8 @@ class AppSettings {
 
   Map<String, dynamic> toJson() => {
         'theme': theme,
+        'appTheme': appTheme,
+        'language': language,
         'fontSize': fontSize,
         'cursor': cursor,
         'scrollback': scrollback,
@@ -42,6 +52,8 @@ class AppSettings {
 
   void load(Map<String, dynamic> j) {
     theme = j['theme'] ?? theme;
+    appTheme = j['appTheme'] ?? appTheme;
+    language = j['language'] ?? language;
     fontSize = (j['fontSize'] ?? fontSize).toDouble();
     cursor = j['cursor'] ?? cursor;
     scrollback = j['scrollback'] ?? scrollback;
@@ -64,6 +76,8 @@ class Store extends ChangeNotifier {
   static final Store i = Store._();
 
   late SharedPreferences _p;
+  // Android: Keystore-backed EncryptedSharedPreferences. Windows: DPAPI-encrypted
+  // file in the app's support folder. Same storage keys on every platform.
   final _sec = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
 
   List<Host> hosts = [];
@@ -73,24 +87,30 @@ class Store extends ChangeNotifier {
 
   Future<void> init() async {
     _p = await SharedPreferences.getInstance();
+    // Same keys since 1.0 ('settings', 'hosts', 'snippets', 'known_hosts' and
+    // pw_/key_/pp_<id> in secure storage): updates never migrate or wipe them.
+    settings.load(jsonDecode(_p.getString('settings') ?? '{}'));
     hosts = _list('hosts').map(Host.fromJson).toList();
     final sn = _p.getString('snippets');
+    // Untouched defaults are not persisted, so they come up in the current language.
     snippets = sn == null ? _defaultSnippets() : _list('snippets').map(Snippet.fromJson).toList();
     knownHosts = Map<String, String>.from(jsonDecode(_p.getString('known_hosts') ?? '{}'));
-    settings.load(jsonDecode(_p.getString('settings') ?? '{}'));
   }
 
   List<Map<String, dynamic>> _list(String k) =>
       (jsonDecode(_p.getString(k) ?? '[]') as List).cast<Map<String, dynamic>>();
 
-  List<Snippet> _defaultSnippets() => [
-        Snippet(id: 's1', name: 'مصرف رم و دیسک', cmd: 'free -h && df -h /'),
-        Snippet(id: 's2', name: 'پرمصرف‌ترین پردازش‌ها', cmd: 'ps aux --sort=-%mem | head -12'),
-        Snippet(id: 's3', name: 'پورت‌های باز', cmd: 'ss -tulpn'),
-        Snippet(id: 's4', name: 'سرویس‌های خراب', cmd: 'systemctl --failed'),
-        Snippet(id: 's5', name: 'آپدیت سیستم', cmd: 'apt update && apt upgrade -y'),
-        Snippet(id: 's6', name: 'مانیتور زنده', cmd: 'htop'),
-      ];
+  List<Snippet> _defaultSnippets() {
+    final s = S.current;
+    return [
+      Snippet(id: 's1', name: s['snipRamDisk'], cmd: 'free -h && df -h /'),
+      Snippet(id: 's2', name: s['snipTopProcs'], cmd: 'ps aux --sort=-%mem | head -12'),
+      Snippet(id: 's3', name: s['snipOpenPorts'], cmd: 'ss -tulpn'),
+      Snippet(id: 's4', name: s['snipFailedServices'], cmd: 'systemctl --failed'),
+      Snippet(id: 's5', name: s['snipUpdate'], cmd: 'apt update && apt upgrade -y'),
+      Snippet(id: 's6', name: s['snipMonitor'], cmd: 'htop'),
+    ];
+  }
 
   Future<void> _saveHosts() => _p.setString('hosts', jsonEncode(hosts.map((h) => h.toJson()).toList()));
   Future<void> _saveSnippets() =>
@@ -131,10 +151,28 @@ class Store extends ChangeNotifier {
   }
 
   Future<HostSecret> secret(String id) async => HostSecret(
-        password: await _sec.read(key: 'pw_$id') ?? '',
-        privateKey: await _sec.read(key: 'key_$id') ?? '',
-        passphrase: await _sec.read(key: 'pp_$id') ?? '',
+        password: await _read('pw_$id'),
+        privateKey: await _read('key_$id'),
+        passphrase: await _read('pp_$id'),
       );
+
+  /// A failed read (e.g. keystore hiccup) is treated as "not saved" so the app
+  /// asks for the password instead of crashing; nothing is deleted.
+  Future<String> _read(String key) async {
+    try {
+      return await _sec.read(key: key) ?? '';
+    } catch (e) {
+      debugPrint('secure storage read $key failed: $e');
+      return '';
+    }
+  }
+
+  /// Remembers [password] for host [id] (used after a successful login when
+  /// "Remember password" was ticked). Replaces a wrong saved password.
+  Future<void> savePassword(String id, String password) async {
+    await _sec.write(key: 'pw_$id', value: password);
+    notifyListeners();
+  }
 
   // ---- snippets
   Future<void> upsertSnippet(Snippet s) async {

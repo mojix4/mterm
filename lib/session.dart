@@ -7,11 +7,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
+import 'l10n.dart';
 import 'models.dart';
 import 'store.dart';
 
 /// Asks the user whether to trust a server key. [old] is set when the key changed.
 typedef HostKeyPrompt = Future<bool> Function(String type, String fingerprint, String? old);
+
+/// What the user typed in the password dialog.
+class PasswordAnswer {
+  const PasswordAnswer(this.password, {this.remember = true});
+  final String password;
+  final bool remember;
+}
+
+/// Asks the user for [host]'s password. [wrong] is true after a failed login.
+/// Returns null when the user cancels.
+typedef PasswordPrompt = Future<PasswordAnswer?> Function(Host host, {bool wrong});
 
 enum SessStatus { connecting, connected, closed, failed }
 
@@ -34,8 +46,22 @@ class TermSession extends ChangeNotifier {
   SSHClient? _client;
   SSHSession? _shell;
   SessStatus status = SessStatus.connecting;
+  /// Readable reason for the last failure, in the language that was active then.
   String? error;
+
+  /// Localization key (and argument) of [error], so the UI can show it in the
+  /// current language after a language switch. Null when [error] is free text.
+  String? errorKey;
+  String? errorArg;
   String? title;
+
+  /// Asks for a password when none is saved or the saved one is rejected.
+  /// Null (engine tests) means: just fail like before.
+  PasswordPrompt? passwordPrompt;
+
+  /// Password typed by the user in this session (overrides the saved one).
+  String? _typedPw;
+  bool _rememberPw = true;
   bool ctrl = false;
   bool alt = false;
 
@@ -59,10 +85,30 @@ class TermSession extends ChangeNotifier {
     bool stale() => gen != _gen;
     status = SessStatus.connecting;
     error = null;
+    errorKey = null;
+    errorArg = null;
     notifyListeners();
     _info('Connecting to ${host.host}:${host.port} …');
+    final usesPassword = host.auth == 'password';
+    var pw = '';
+    var cancelled = false;
+    // Gives the password to dartssh2; asks the user when nothing is saved.
+    Future<String?> password() async {
+      if (pw.isEmpty && usesPassword && !cancelled && passwordPrompt != null && !stale()) {
+        final a = await passwordPrompt!(host, wrong: false);
+        if (a == null || a.password.isEmpty) {
+          cancelled = true;
+        } else {
+          pw = _typedPw = a.password;
+          _rememberPw = a.remember;
+        }
+      }
+      return pw.isEmpty ? null : pw;
+    }
+
     try {
       final sec = await Store.i.secret(host.id);
+      pw = _typedPw ?? sec.password;
       List<SSHKeyPair>? ids;
       if (host.auth == 'key' && sec.privateKey.trim().isNotEmpty) {
         ids = SSHKeyPair.fromPem(sec.privateKey.trim(), sec.passphrase.isEmpty ? null : sec.passphrase);
@@ -74,8 +120,11 @@ class TermSession extends ChangeNotifier {
         username: host.user,
         identities: ids,
         keepAliveInterval: ka > 0 ? Duration(seconds: ka) : null,
-        onPasswordRequest: () => sec.password.isEmpty ? null : sec.password,
-        onUserInfoRequest: (req) => req.prompts.map((_) => sec.password).toList(),
+        onPasswordRequest: password,
+        onUserInfoRequest: (req) async {
+          final p = await password();
+          return p == null ? null : req.prompts.map((_) => p).toList();
+        },
         onVerifyHostKey: (type, fp) async {
           final hex = fp.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':');
           final known = Store.i.knownFingerprint(host.host, host.port);
@@ -88,6 +137,11 @@ class TermSession extends ChangeNotifier {
       if (stale()) return client.close();
       _client = client;
       await client.authenticated;
+      // Logged in: keep a password the user typed if they asked us to, replacing
+      // a wrong or missing saved one so the next connect is automatic.
+      if (_typedPw != null && _rememberPw && _typedPw != sec.password) {
+        await Store.i.savePassword(host.id, _typedPw!);
+      }
       final shell = await client.shell(
         pty: SSHPtyConfig(type: 'xterm-256color', width: terminal.viewWidth, height: terminal.viewHeight),
       );
@@ -112,15 +166,34 @@ class TermSession extends ChangeNotifier {
       client.done.whenComplete(() => _closed(gen)).ignore();
     } catch (e) {
       if (stale()) return;
-      status = SessStatus.failed;
-      error = _explain(e);
-      _info('');
-      terminal.write('\x1b[31m✕ Connection failed\x1b[0m \x1b[90m($e)\x1b[0m\r\n');
       _client?.close();
       _client = null;
+      final (key, arg) = _explain(e);
+      // Wrong (or missing) password: ask again and retry with what the user
+      // types. Each retry needs a new answer, so there is no silent loop, and
+      // Cancel ends it with the normal error.
+      if (key == 'errAuth' && usesPassword && !cancelled && passwordPrompt != null) {
+        _info('\x1b[31mAuthentication failed\x1b[0m');
+        final a = await passwordPrompt!(host, wrong: true);
+        if (stale()) return;
+        if (a != null && a.password.isNotEmpty) {
+          _typedPw = a.password;
+          _rememberPw = a.remember;
+          return connect(prompt);
+        }
+      }
+      status = SessStatus.failed;
+      errorKey = key;
+      errorArg = arg;
+      error = key == null ? arg : S.current.f(key, {'msg': arg ?? ''});
+      _info('');
+      terminal.write('\x1b[31m✕ Connection failed\x1b[0m \x1b[90m($e)\x1b[0m\r\n');
       notifyListeners();
     }
   }
+
+  /// [error] in the language of [s] (falls back to the stored text).
+  String? errorIn(S s) => errorKey == null ? error : s.f(errorKey!, {'msg': errorArg ?? ''});
 
   void _closed(int gen) {
     if (gen != _gen) return;
@@ -130,28 +203,29 @@ class TermSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  static String _explain(Object e) {
+  /// Localization key (null for free text) and argument for a connect error.
+  static (String?, String?) _explain(Object e) {
     // The transport closing early (host key rejected, network drop) surfaces as an
     // auth abort; explain the real cause instead of blaming the password.
     if (e is SSHAuthAbortError) {
       final r = e.reason;
       if (r is SSHHostkeyError || r is SSHHandshakeError) return _explain(r!);
-      if (r is SSHSocketError) return 'اتصال در حین ورود قطع شد';
-      if (e.message.contains('timed out')) return 'سرور جواب نداد (Timeout)';
+      if (r is SSHSocketError) return ('errAuthDropped', null);
+      if (e.message.contains('timed out')) return ('errTimeout', null);
     }
-    if (e is SSHAuthFailError || e is SSHAuthAbortError) return 'نام کاربری، رمز یا کلید اشتباه است';
-    if (e is SSHHostkeyError) return 'کلید سرور تأیید نشد';
-    if (e is SSHHandshakeError) return 'توافق رمزنگاری با سرور ممکن نشد';
-    if (e is SSHKeyDecryptError) return 'رمز کلید خصوصی اشتباه است';
-    if (e is SSHKeyDecodeError) return 'کلید خصوصی معتبر نیست';
-    if (e is TimeoutException) return 'سرور جواب نداد (Timeout)';
+    if (e is SSHAuthFailError || e is SSHAuthAbortError) return ('errAuth', null);
+    if (e is SSHHostkeyError) return ('errHostKey', null);
+    if (e is SSHHandshakeError) return ('errHandshake', null);
+    if (e is SSHKeyDecryptError) return ('errKeyPass', null);
+    if (e is SSHKeyDecodeError) return ('invalidKey', null);
+    if (e is TimeoutException) return ('errTimeout', null);
     if (e is SocketException) {
       final m = e.osError?.message ?? e.message;
-      if (m.contains('refused')) return 'اتصال رد شد؛ پورت SSH بسته است';
-      if (m.contains('lookup') || m.contains('host')) return 'آدرس سرور پیدا نشد';
-      return 'سرور در دسترس نیست: $m';
+      if (m.contains('refused')) return ('errRefused', null);
+      if (m.contains('lookup') || m.contains('host')) return ('errNotFound', null);
+      return ('errUnreachable', m);
     }
-    return e.toString();
+    return (null, e.toString());
   }
 
   // ---- input

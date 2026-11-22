@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:xterm/xterm.dart';
 
+import '../l10n.dart';
 import '../session.dart';
 import '../store.dart';
 import '../themes.dart';
@@ -27,9 +28,45 @@ const Map<String, String> _ctrlKeys = {'^C': '\x03', '^D': '\x04', '^Z': '\x1a',
 
 /// Every key that can be placed on the key bar.
 const allBarKeys = [
-  'esc', 'tab', 'ctrl', 'alt', '←', '↑', '↓', '→', 'home', 'end', 'pgup', 'pgdn', 'del',
-  '|', '/', '-', '~', ':', ';', '\$', '&', '*', '>', '<', '{', '}', '[', ']', '"', "'", '`', '\\', '=',
-  '^C', '^D', '^Z', '^L', '^R', 'paste',
+  'esc',
+  'tab',
+  'ctrl',
+  'alt',
+  '←',
+  '↑',
+  '↓',
+  '→',
+  'home',
+  'end',
+  'pgup',
+  'pgdn',
+  'del',
+  '|',
+  '/',
+  '-',
+  '~',
+  ':',
+  ';',
+  '\$',
+  '&',
+  '*',
+  '>',
+  '<',
+  '{',
+  '}',
+  '[',
+  ']',
+  '"',
+  "'",
+  '`',
+  '\\',
+  '=',
+  '^C',
+  '^D',
+  '^Z',
+  '^L',
+  '^R',
+  'paste',
 ];
 
 class TerminalScreen extends StatefulWidget {
@@ -128,13 +165,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _copy() {
     final sel = controller.selection;
+    final l = S.of(context);
     if (sel == null) {
-      toast(context, 'برای انتخاب متن، روی آن نگه دارید');
+      toast(context, l['selectHint']);
       return;
     }
     Clipboard.setData(ClipboardData(text: s.terminal.buffer.getText(sel)));
     controller.clearSelection();
-    toast(context, 'کپی شد');
+    toast(context, l['copied']);
   }
 
   void _snippets() {
@@ -147,29 +185,30 @@ class _TerminalScreenState extends State<TerminalScreen> {
         maxChildSize: 0.9,
         builder: (c, sc) {
           final items = Store.i.snippets;
+          final l = S.of(c);
+          final p = c.pal;
           return ListView(controller: sc, padding: const EdgeInsets.fromLTRB(12, 0, 12, 24), children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(8, 0, 8, 10),
-              child: Text('دستورها', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+              child: Text(l['navSnippets'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
             if (items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('دستوری ذخیره نکرده‌اید', textAlign: TextAlign.center, style: TextStyle(color: C.muted)),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(l['noSnippetsSaved'], textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
               ),
             for (final sn in items)
               ListTile(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                leading: const Icon(Icons.bolt, color: C.amber),
+                leading: Icon(Icons.bolt, color: p.amber),
                 title: Text(sn.name),
                 subtitle: Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: Ltr(sn.cmd,
-                      style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12, color: C.muted)),
+                  child: Ltr(sn.cmd, style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12, color: p.muted)),
                 ),
                 trailing: IconButton(
-                  tooltip: 'فقط بنویس',
-                  icon: const Icon(Icons.edit_note, color: C.muted),
+                  tooltip: l['typeOnly'],
+                  icon: Icon(Icons.edit_note, color: p.muted),
                   onPressed: () {
                     Navigator.pop(c);
                     s.run(sn.cmd, enter: false);
@@ -183,14 +222,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 },
               ),
             if (s.typed.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(8, 16, 8, 6),
-                child: Text('تاریخچه همین نشست', style: TextStyle(color: C.muted, fontSize: 13)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 16, 8, 6),
+                child: Text(l['sessionHistory'], style: TextStyle(color: p.muted, fontSize: 13)),
               ),
               for (final h in s.typed.take(30))
                 ListTile(
                   dense: true,
-                  leading: const Icon(Icons.history, color: C.muted, size: 20),
+                  leading: Icon(Icons.history, color: p.muted, size: 20),
                   title: Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: Ltr(h, style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 13)),
@@ -230,7 +269,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
       listenable: Listenable.merge([s, Store.i]),
       builder: (context, _) {
         final st = Store.i.settings;
-        final theme = terminalThemes[st.theme] ?? terminalThemes['Termius']!;
+        final l = S.of(context);
+        final theme = terminalThemeFor(st.theme, Theme.of(context).brightness);
         final light = theme.background.computeLuminance() > 0.5;
         final barBg = light ? const Color(0xFFF0F2F6) : Color.lerp(theme.background, Colors.white, 0.06)!;
         final keyBg = light ? Colors.white : Color.lerp(theme.background, Colors.white, 0.13)!;
@@ -242,6 +282,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
           appBar: AppBar(
             backgroundColor: barBg,
             foregroundColor: fg,
+            systemOverlayStyle: (light ? SystemUiOverlayStyle.dark : SystemUiOverlayStyle.light)
+                .copyWith(statusBarColor: Colors.transparent, systemNavigationBarColor: barBg),
             toolbarHeight: 52,
             titleSpacing: 0,
             title: Row(children: [
@@ -257,7 +299,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
               ),
             ]),
             actions: [
-              IconButton(tooltip: 'دستورها', icon: const Icon(Icons.bolt), onPressed: _snippets),
+              IconButton(tooltip: l['navSnippets'], icon: const Icon(Icons.bolt), onPressed: _snippets),
               PopupMenuButton<String>(
                 onSelected: (v) {
                   switch (v) {
@@ -270,19 +312,20 @@ class _TerminalScreenState extends State<TerminalScreen> {
                     case 'small':
                       _setFont(fontSize - 1);
                     case 'reconnect':
-                      s.reconnect(hostKeyPrompt);
+                      _reconnect();
                     case 'close':
                       Sessions.i.close(s);
                       Navigator.of(context).pop();
                   }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'copy', child: Text('کپی متن انتخاب‌شده')),
-                  PopupMenuItem(value: 'paste', child: Text('چسباندن')),
-                  PopupMenuItem(value: 'big', child: Text('بزرگ‌تر کردن فونت')),
-                  PopupMenuItem(value: 'small', child: Text('کوچک‌تر کردن فونت')),
-                  PopupMenuItem(value: 'reconnect', child: Text('اتصال دوباره')),
-                  PopupMenuItem(value: 'close', child: Text('بستن نشست', style: TextStyle(color: C.red))),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'copy', child: Text(l['copySelection'])),
+                  PopupMenuItem(value: 'paste', child: Text(l['paste'])),
+                  PopupMenuItem(value: 'big', child: Text(l['fontBigger'])),
+                  PopupMenuItem(value: 'small', child: Text(l['fontSmaller'])),
+                  PopupMenuItem(value: 'reconnect', child: Text(l['reconnect'])),
+                  PopupMenuItem(
+                      value: 'close', child: Text(l['closeSession'], style: TextStyle(color: context.pal.red))),
                 ],
               ),
             ],
@@ -396,35 +439,63 @@ class _TerminalScreenState extends State<TerminalScreen> {
     );
   }
 
+  void _reconnect() {
+    s.passwordPrompt ??= passwordPrompt;
+    s.reconnect(hostKeyPrompt);
+  }
+
   Widget _dot() {
+    final p = context.pal;
     final c = switch (s.status) {
-      SessStatus.connected => C.green,
-      SessStatus.connecting => C.amber,
-      _ => C.red,
+      SessStatus.connected => p.green,
+      SessStatus.connecting => p.amber,
+      _ => p.red,
     };
     return Container(width: 9, height: 9, decoration: BoxDecoration(color: c, shape: BoxShape.circle));
   }
 
-  Widget _reconnectBanner() => Directionality(
-        textDirection: TextDirection.rtl,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
-          decoration: BoxDecoration(color: C.surface2, borderRadius: BorderRadius.circular(14)),
-          child: Row(children: [
-            Icon(s.status == SessStatus.failed ? Icons.error_outline : Icons.link_off, color: C.red),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(s.status == SessStatus.failed ? (s.error ?? 'اتصال ناموفق') : 'اتصال قطع شد',
-                  style: const TextStyle(color: C.text, fontSize: 13.5)),
+  Widget _reconnectBanner() {
+    // The banner sits inside the terminal's forced-LTR area; give it the app's direction back.
+    final l = S.of(context);
+    final p = context.pal;
+    return Directionality(
+      textDirection: l.direction,
+      child: Container(
+        padding: const EdgeInsetsDirectional.fromSTEB(14, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: p.surface2,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: p.line),
+        ),
+        // Message and button share a line; a long label (e.g. Russian) wraps the
+        // button onto its own line instead of squeezing the message.
+        child: Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 150, maxWidth: 520),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(s.status == SessStatus.failed ? Icons.error_outline : Icons.link_off, color: p.red),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(s.status == SessStatus.failed ? (s.errorIn(l) ?? l['connFailed']) : l['connClosed'],
+                      style: TextStyle(color: p.text, fontSize: 13.5)),
+                ),
+              ]),
             ),
             FilledButton.tonal(
               style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
-              onPressed: () => s.reconnect(hostKeyPrompt),
-              child: const Text('اتصال دوباره'),
+              onPressed: _reconnect,
+              child: Text(l['reconnect']),
             ),
-          ]),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _KeyCap extends StatelessWidget {
@@ -438,7 +509,7 @@ class _KeyCap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: active ? C.accent : bg,
+      color: active ? context.pal.accent : bg,
       borderRadius: BorderRadius.circular(9),
       child: InkWell(
         borderRadius: BorderRadius.circular(9),
@@ -452,8 +523,7 @@ class _KeyCap extends StatelessWidget {
           child: icon != null
               ? Icon(icon, size: 18, color: active ? Colors.white : fg)
               : Text(label!,
-                  style: TextStyle(
-                      fontFamily: 'JetBrainsMono', fontSize: 14, color: active ? Colors.white : fg)),
+                  style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 14, color: active ? Colors.white : fg)),
         ),
       ),
     );

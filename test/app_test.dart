@@ -25,7 +25,8 @@ final Map<String, String> secure = {};
 
 Future<void> setup() async {
   TestWidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues({});
+  // Error texts are asserted in Persian.
+  SharedPreferences.setMockInitialValues({'settings': '{"language":"fa"}'});
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
     const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
     (call) async {

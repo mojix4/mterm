@@ -239,23 +239,78 @@ void main() {
     await closeAll(t);
   }, skip: skip);
 
-  testWidgets('wrong password shows a readable error, no crash', (t) async {
+  testWidgets('wrong saved password: asked again, cancel gives a readable error, no crash', (t) async {
     await setSize(t, phone);
     await addHost(pw: 'definitely-wrong');
     await launch(t);
-    final s = await openFromList(t, label);
-    expect(s.status, SessStatus.failed);
+    await t.tap(find.text(label).last);
+    await t.pump();
+    final s = Sessions.i.list.single;
+    await waitFor(t, () => find.text('اعتماد و اتصال').evaluate().isNotEmpty, reason: 'host key prompt');
+    await t.tap(find.text('اعتماد و اتصال'));
+    await waitFor(t, () => find.text('رمز اشتباه بود، دوباره وارد کنید').evaluate().isNotEmpty,
+        reason: 'password asked again');
+    await t.tap(find.widgetWithText(TextButton, 'انصراف'));
+    await waitFor(t, () => s.status == SessStatus.failed);
+    await t.pump(const Duration(milliseconds: 400));
     expect(s.error, 'نام کاربری، رمز یا کلید اشتباه است');
     // the terminal grid cannot shape RTL text, so app messages inside it must not be Persian
     expect(RegExp('[\u0600-\u06FF]').hasMatch(bufferOf(s)), isFalse, reason: bufferOf(s));
     expect(bufferOf(s), contains('Connection failed'));
     expect(find.widgetWithText(Row, 'نام کاربری، رمز یا کلید اشتباه است'), findsWidgets);
     expect(find.widgetWithText(FilledButton, 'اتصال دوباره'), findsOneWidget);
+    expect(secure['pw_h'], 'definitely-wrong', reason: 'cancel must not touch the saved password');
     // back in the list the open session shows the error too
     await t.tap(find.byType(BackButton));
     await t.pumpAndSettle();
     expect(find.text('نشست‌های باز'), findsOneWidget);
     expect(find.text('نام کاربری، رمز یا کلید اشتباه است'), findsOneWidget);
+    await closeAll(t);
+  }, skip: skip);
+
+  testWidgets('wrong saved password is replaced by the right one after login', (t) async {
+    await setSize(t, phone);
+    await addHost(pw: 'definitely-wrong');
+    await launch(t);
+    await t.tap(find.text(label).last);
+    await t.pump();
+    final s = Sessions.i.list.single;
+    await waitFor(t, () => find.text('اعتماد و اتصال').evaluate().isNotEmpty, reason: 'host key prompt');
+    await t.tap(find.text('اعتماد و اتصال'));
+    // a second wrong answer is asked again too (no silent loop, no give-up)
+    await waitFor(t, () => find.text('رمز اشتباه بود، دوباره وارد کنید').evaluate().isNotEmpty);
+    await t.enterText(find.byKey(const ValueKey('pw-field')), 'still-wrong');
+    await t.tap(find.widgetWithText(TextButton, 'اتصال'));
+    await t.pump();
+    await waitFor(t, () => find.text('رمز اشتباه بود، دوباره وارد کنید').evaluate().isNotEmpty);
+    await t.enterText(find.byKey(const ValueKey('pw-field')), sshPass);
+    await t.tap(find.widgetWithText(TextButton, 'اتصال'));
+    await waitFor(t, () => s.status == SessStatus.connected, reason: 'login with the typed password');
+    expect(secure['pw_h'], sshPass);
+    await t.tap(find.byType(BackButton));
+    await t.pumpAndSettle();
+    await closeAll(t);
+    // next time it connects straight away
+    final s2 = await openFromList(t, label, expectPrompt: false);
+    expect(s2.status, SessStatus.connected);
+    await closeAll(t);
+  }, skip: skip);
+
+  testWidgets('no saved password: asked once, remembered when ticked', (t) async {
+    await setSize(t, phone);
+    await addHost(pw: '');
+    await launch(t);
+    await t.tap(find.text(label).last);
+    await t.pump();
+    final s = Sessions.i.list.single;
+    await waitFor(t, () => find.text('اعتماد و اتصال').evaluate().isNotEmpty, reason: 'host key prompt');
+    await t.tap(find.text('اعتماد و اتصال'));
+    await waitFor(t, () => find.byKey(const ValueKey('pw-field')).evaluate().isNotEmpty, reason: 'password asked');
+    expect(find.text('رمز اشتباه بود، دوباره وارد کنید'), findsNothing);
+    await t.enterText(find.byKey(const ValueKey('pw-field')), sshPass);
+    await t.tap(find.widgetWithText(TextButton, 'اتصال'));
+    await waitFor(t, () => s.status == SessStatus.connected);
+    expect(secure['pw_h'], sshPass);
     await closeAll(t);
   }, skip: skip);
 

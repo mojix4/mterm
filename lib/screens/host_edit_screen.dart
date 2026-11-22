@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n.dart';
 import '../models.dart';
 import '../store.dart';
 import '../themes.dart';
@@ -35,7 +36,7 @@ class _HostEditScreenState extends State<HostEditScreen> {
     super.initState();
     final h = widget.host;
     if (h != null) {
-      label.text = widget.duplicate ? '${h.label} (کپی)' : h.label;
+      label.text = widget.duplicate ? S.current.f('copyOf', {'name': h.label}) : h.label;
       host.text = h.host;
       port.text = '${h.port}';
       user.text = h.user;
@@ -50,7 +51,7 @@ class _HostEditScreenState extends State<HostEditScreen> {
         });
       });
     } else {
-      color = Store.i.hosts.length % C.hostColors.length;
+      color = Store.i.hosts.length % Palette.hostColors.length;
     }
   }
 
@@ -76,7 +77,7 @@ class _HostEditScreenState extends State<HostEditScreen> {
     final d = await Clipboard.getData(Clipboard.kTextPlain);
     final t = d?.text?.trim() ?? '';
     if (!t.contains('PRIVATE KEY')) {
-      if (mounted) toast(context, 'در کلیپ‌بورد کلید خصوصی پیدا نشد');
+      if (mounted) toast(context, S.of(context)['noKeyInClipboard']);
       return;
     }
     setState(() => key.text = t);
@@ -88,13 +89,15 @@ class _HostEditScreenState extends State<HostEditScreen> {
   @override
   Widget build(BuildContext context) {
     const ltr = TextDirection.ltr;
+    final s = S.of(context);
+    final p = context.pal;
     return Scaffold(
       appBar: AppBar(
-        title: Text(isNew ? 'سرور جدید' : 'ویرایش سرور'),
+        title: Text(isNew ? s['newHost'] : s['editHost']),
         actions: [
           TextButton(
             onPressed: saving ? null : _save,
-            child: const Text('ذخیره', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            child: Text(s['save'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(width: 8),
         ],
@@ -102,7 +105,7 @@ class _HostEditScreenState extends State<HostEditScreen> {
       body: Form(
         key: form,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 40), children: [
-          TextFormField(controller: label, decoration: _dec('نام (اختیاری)', hint: 'مثلاً سرور آلمان')),
+          TextFormField(controller: label, decoration: _dec(s['labelOptional'], hint: s['labelHint'])),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
@@ -112,8 +115,8 @@ class _HostEditScreenState extends State<HostEditScreen> {
                 textDirection: ltr,
                 keyboardType: TextInputType.url,
                 autocorrect: false,
-                decoration: _dec('آدرس سرور', hint: '1.2.3.4 یا example.com'),
-                validator: (v) => (v ?? '').trim().isEmpty ? 'آدرس را وارد کنید' : null,
+                decoration: _dec(s['address'], hint: s['addressHint']),
+                validator: (v) => (v ?? '').trim().isEmpty ? s['enterAddress'] : null,
               ),
             ),
             const SizedBox(width: 10),
@@ -123,10 +126,10 @@ class _HostEditScreenState extends State<HostEditScreen> {
                 textDirection: ltr,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: _dec('پورت'),
+                decoration: _dec(s['port']),
                 validator: (v) {
                   final n = int.tryParse((v ?? '').trim());
-                  return n == null || n < 1 || n > 65535 ? 'نامعتبر' : null;
+                  return n == null || n < 1 || n > 65535 ? s['invalid'] : null;
                 },
               ),
             ),
@@ -136,14 +139,14 @@ class _HostEditScreenState extends State<HostEditScreen> {
             controller: user,
             textDirection: ltr,
             autocorrect: false,
-            decoration: _dec('نام کاربری'),
-            validator: (v) => (v ?? '').trim().isEmpty ? 'نام کاربری را وارد کنید' : null,
+            decoration: _dec(s['username']),
+            validator: (v) => (v ?? '').trim().isEmpty ? s['enterUsername'] : null,
           ),
           const SizedBox(height: 18),
           SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'password', label: Text('رمز عبور'), icon: Icon(Icons.password)),
-              ButtonSegment(value: 'key', label: Text('کلید SSH'), icon: Icon(Icons.key)),
+            segments: [
+              ButtonSegment(value: 'password', label: Text(s['password']), icon: const Icon(Icons.password)),
+              ButtonSegment(value: 'key', label: Text(s['sshKey']), icon: const Icon(Icons.key)),
             ],
             selected: {auth},
             onSelectionChanged: (s) => setState(() => auth = s.first),
@@ -156,9 +159,9 @@ class _HostEditScreenState extends State<HostEditScreen> {
               obscureText: !showPw,
               autocorrect: false,
               enableSuggestions: false,
-              decoration: _dec('رمز عبور',
+              decoration: _dec(s['password'],
                   suffix: IconButton(
-                    icon: Icon(showPw ? Icons.visibility_off : Icons.visibility, color: C.muted),
+                    icon: Icon(showPw ? Icons.visibility_off : Icons.visibility, color: p.muted),
                     onPressed: () => setState(() => showPw = !showPw),
                   )),
             )
@@ -171,45 +174,44 @@ class _HostEditScreenState extends State<HostEditScreen> {
               autocorrect: false,
               enableSuggestions: false,
               style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11.5),
-              decoration: _dec('کلید خصوصی', hint: '-----BEGIN OPENSSH PRIVATE KEY-----'),
+              decoration: _dec(s['privateKey'], hint: '-----BEGIN OPENSSH PRIVATE KEY-----'),
               validator: (v) =>
-                  auth == 'key' && !(v ?? '').contains('PRIVATE KEY') ? 'کلید خصوصی معتبر نیست' : null,
+                  auth == 'key' && !(v ?? '').contains('PRIVATE KEY') ? s['invalidKey'] : null,
             ),
             Align(
               alignment: AlignmentDirectional.centerEnd,
               child: TextButton.icon(
-                  onPressed: _pasteKey, icon: const Icon(Icons.content_paste), label: const Text('چسباندن کلید')),
+                  onPressed: _pasteKey, icon: const Icon(Icons.content_paste), label: Text(s['pasteKey'])),
             ),
             TextFormField(
               controller: passphrase,
               textDirection: ltr,
               obscureText: true,
-              decoration: _dec('رمز کلید (اگر دارد)'),
+              decoration: _dec(s['keyPassphrase']),
             ),
           ],
           const SizedBox(height: 22),
-          const Text('رنگ', style: TextStyle(color: C.muted, fontSize: 13)),
+          Text(s['color'], style: TextStyle(color: p.muted, fontSize: 13)),
           const SizedBox(height: 10),
           Wrap(spacing: 12, runSpacing: 12, children: [
-            for (var i = 0; i < C.hostColors.length; i++)
+            for (var i = 0; i < Palette.hostColors.length; i++)
               GestureDetector(
                 onTap: () => setState(() => color = i),
                 child: Container(
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: C.hostColors[i],
+                    color: Palette.hostColors[i],
                     shape: BoxShape.circle,
-                    border: Border.all(color: color == i ? Colors.white : Colors.transparent, width: 3),
+                    border: Border.all(color: color == i ? p.text : Colors.transparent, width: 3),
                   ),
                 ),
               ),
           ]),
           const SizedBox(height: 28),
-          FilledButton(onPressed: saving ? null : _save, child: const Text('ذخیره')),
+          FilledButton(onPressed: saving ? null : _save, child: Text(s['save'])),
           const SizedBox(height: 12),
-          const Text('رمزها و کلیدها رمزنگاری‌شده فقط روی همین گوشی ذخیره می‌شوند.',
-              textAlign: TextAlign.center, style: TextStyle(color: C.muted, fontSize: 12)),
+          Text(s['storageNote'], textAlign: TextAlign.center, style: TextStyle(color: p.muted, fontSize: 12)),
         ]),
       ),
     );

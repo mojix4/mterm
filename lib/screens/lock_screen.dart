@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
+import '../l10n.dart';
 import '../store.dart';
 import '../themes.dart';
 
@@ -70,9 +71,9 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
   late final AnimationController shake =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 380));
 
-  String get title {
-    if (!widget.setMode) return 'رمز برنامه را وارد کنید';
-    return first == null ? 'یک PIN چهار رقمی انتخاب کنید' : 'PIN را دوباره وارد کنید';
+  String title(S s) {
+    if (!widget.setMode) return s['lockEnter'];
+    return first == null ? s['lockChoose'] : s['lockRepeat'];
   }
 
   @override
@@ -92,9 +93,10 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
   Future<void> _bio() async {
     try {
       final auth = LocalAuthentication();
+      final reason = S.of(context)['bioReason'];
       if (!await auth.isDeviceSupported()) return;
       final ok = await auth.authenticate(
-        localizedReason: 'برای باز کردن MTerm',
+        localizedReason: reason,
         options: AuthenticationOptions(biometricOnly: !Platform.isWindows, stickyAuth: true),
       );
       if (ok) widget.onUnlocked?.call();
@@ -147,17 +149,17 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
     }
   }
 
-  Widget _header() => Column(mainAxisSize: MainAxisSize.min, children: [
+  Widget _header(S s, Palette p) => Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 72,
           height: 72,
-          decoration: BoxDecoration(color: C.surface2, borderRadius: BorderRadius.circular(22)),
-          child: const Icon(Icons.lock_outline, color: C.green, size: 34),
+          decoration: BoxDecoration(color: p.surface2, borderRadius: BorderRadius.circular(22)),
+          child: Icon(Icons.lock_outline, color: p.green, size: 34),
         ),
         const SizedBox(height: 20),
-        Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, color: C.text)),
+        Text(title(s), textAlign: TextAlign.center, style: TextStyle(fontSize: 17, color: p.text)),
         const SizedBox(height: 6),
-        Text(error ? 'اشتباه بود، دوباره امتحان کنید' : ' ', style: const TextStyle(color: C.red, fontSize: 13)),
+        Text(error ? s['wrongPin'] : ' ', style: TextStyle(color: p.red, fontSize: 13)),
         const SizedBox(height: 18),
         AnimatedBuilder(
           animation: shake,
@@ -179,8 +181,8 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
                   height: 14,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: i < pin.length ? C.text : Colors.transparent,
-                    border: Border.all(color: error ? C.red : C.muted, width: 2),
+                    color: i < pin.length ? p.text : Colors.transparent,
+                    border: Border.all(color: error ? p.red : p.muted, width: 2),
                   ),
                 ),
               ),
@@ -197,7 +199,7 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
     return cell * 3 + 2 * _gapX;
   }
 
-  Widget _keypad(double width) {
+  Widget _keypad(double width, Palette p) {
     final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'bio', '0', '⌫'];
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -214,7 +216,7 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
             if (k == 'bio') {
               final show = !widget.setMode && Store.i.settings.biometric;
               return show
-                  ? IconButton(onPressed: _bio, icon: const Icon(Icons.fingerprint, size: 34, color: C.green))
+                  ? IconButton(onPressed: _bio, icon: Icon(Icons.fingerprint, size: 34, color: p.green))
                   : const SizedBox();
             }
             return InkWell(
@@ -223,10 +225,10 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
               child: Container(
                 alignment: Alignment.center,
                 decoration:
-                    BoxDecoration(shape: BoxShape.circle, color: k == '⌫' ? Colors.transparent : C.surface),
+                    BoxDecoration(shape: BoxShape.circle, color: k == '⌫' ? Colors.transparent : p.surface),
                 child: k == '⌫'
-                    ? const Icon(Icons.backspace_outlined, color: C.muted)
-                    : Text(k, style: const TextStyle(fontSize: 26, color: C.text)),
+                    ? Icon(Icons.backspace_outlined, color: p.muted)
+                    : Text(k, style: TextStyle(fontSize: 26, color: p.text)),
               ),
             );
           }).toList(),
@@ -237,19 +239,21 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
+    final p = context.pal;
     final close = widget.setMode
         ? IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop())
         : null;
     return Material(
-      color: C.bg,
+      color: p.bg,
       child: SafeArea(
         child: LayoutBuilder(builder: (context, box) {
           // Landscape / short screens: header beside the keypad.
           if (box.maxWidth > box.maxHeight && box.maxHeight < 560) {
             return Stack(children: [
               Row(children: [
-                Expanded(child: Center(child: SingleChildScrollView(child: _header()))),
-                Expanded(child: Center(child: _keypad(_padWidth(box.maxHeight - 32)))),
+                Expanded(child: Center(child: SingleChildScrollView(child: _header(s, p)))),
+                Expanded(child: Center(child: _keypad(_padWidth(box.maxHeight - 32), p))),
               ]),
               if (close != null) PositionedDirectional(top: 0, start: 0, child: close),
             ]);
@@ -259,9 +263,9 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
           return Column(children: [
             if (close != null) Align(alignment: AlignmentDirectional.centerStart, child: close),
             const Spacer(flex: 2),
-            _header(),
+            _header(s, p),
             const Spacer(),
-            _keypad(_padWidth(box.maxHeight - headerH - top - 40)),
+            _keypad(_padWidth(box.maxHeight - headerH - top - 40), p),
             const Spacer(),
           ]);
         }),

@@ -89,7 +89,9 @@ Future<void> freshStore() async {
   for (final s in List.of(Sessions.i.list)) {
     Sessions.i.close(s);
   }
-  SharedPreferences.setMockInitialValues({});
+  // The tests assert on Persian strings: start every test with the UI in fa
+  // (the test device locale is en_US, which would otherwise pick English).
+  SharedPreferences.setMockInitialValues({'settings': '{"language":"fa"}'});
   secure.clear();
   clipboard = null;
   wakelockCalls = 0;

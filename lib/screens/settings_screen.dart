@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 
+import '../l10n.dart';
 import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
@@ -20,149 +21,201 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Store.i,
-      builder: (context, _) => Scaffold(
-        appBar: AppBar(title: const Text('تنظیمات')),
-        body: ListView(padding: const EdgeInsets.fromLTRB(14, 0, 14, 40), children: [
-          Section(title: 'ترمینال', children: [
-            _themePicker(),
-            ListTile(
-              title: const Text('اندازه فونت'),
-              subtitle: Slider(
-                value: st.fontSize,
-                min: 8,
-                max: 30,
-                divisions: 22,
-                label: st.fontSize.round().toString(),
+      builder: (context, _) {
+        final s = S.of(context);
+        final p = context.pal;
+        return Scaffold(
+          appBar: AppBar(title: Text(s['navSettings'])),
+          body: ListView(padding: const EdgeInsets.fromLTRB(14, 0, 14, 40), children: [
+            Section(title: s['appearance'], children: [
+              _choice<String>(
+                  context,
+                  s['theme'],
+                  st.appTheme,
+                  {'system': s['themeSystem'], 'dark': s['themeDark'], 'light': s['themeLight']},
+                  (v) => st.appTheme = v),
+              _choice<String>(
+                  context,
+                  s['language'],
+                  st.language,
+                  {'system': s['systemDefault'], for (final c in languageCodes) c: languageNames[c]!},
+                  (v) => st.language = v),
+            ]),
+            Section(title: s['terminal'], children: [
+              _themePicker(context),
+              ListTile(
+                title: Text(s['fontSize']),
+                subtitle: Slider(
+                  value: st.fontSize,
+                  min: 8,
+                  max: 30,
+                  divisions: 22,
+                  label: st.fontSize.round().toString(),
+                  onChanged: (v) {
+                    st.fontSize = v.roundToDouble();
+                    _save();
+                  },
+                ),
+                trailing: Text('${st.fontSize.round()}', style: TextStyle(color: p.muted)),
+              ),
+              _choice<String>(
+                  context,
+                  s['cursorShape'],
+                  st.cursor,
+                  {'block': s['cursorBlock'], 'underline': s['cursorUnderline'], 'bar': s['cursorBar']},
+                  (v) => st.cursor = v),
+              _choice<int>(
+                  context,
+                  s['scrollback'],
+                  st.scrollback,
+                  {
+                    for (final n in const [1000, 5000, 10000, 20000]) n: s.f('nLines', {'n': s.num(n)})
+                  },
+                  (v) => st.scrollback = v,
+                  note: s['forNewSessions']),
+              ListTile(
+                title: Text(s['customizeKeys']),
+                subtitle: Text(s.f('nKeys', {'n': st.keys.length}), style: TextStyle(color: p.muted)),
+                trailing: Icon(Icons.chevron_right, color: p.muted),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const KeysEditor())),
+              ),
+              SwitchListTile(
+                title: Text(s['vibrateOnBell']),
+                value: st.vibrate,
                 onChanged: (v) {
-                  st.fontSize = v.roundToDouble();
+                  st.vibrate = v;
                   _save();
                 },
               ),
-              trailing: Text('${st.fontSize.round()}', style: const TextStyle(color: C.muted)),
-            ),
-            _choice<String>(context, 'شکل نشانگر', st.cursor, const {'block': 'بلوک', 'underline': 'زیرخط', 'bar': 'خط عمودی'},
-                (v) => st.cursor = v),
-            _choice<int>(context, 'بافر ترمینال', st.scrollback,
-                const {1000: '۱۰۰۰ خط', 5000: '۵۰۰۰ خط', 10000: '۱۰۰۰۰ خط', 20000: '۲۰۰۰۰ خط'}, (v) => st.scrollback = v,
-                note: 'برای نشست‌های جدید'),
-            ListTile(
-              title: const Text('شخصی‌سازی نوار کلید'),
-              subtitle: Text('${st.keys.length} کلید', style: const TextStyle(color: C.muted)),
-              trailing: const Icon(Icons.chevron_left, color: C.muted),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const KeysEditor())),
-            ),
-            SwitchListTile(
-              title: const Text('لرزش هنگام زنگ'),
-              value: st.vibrate,
-              onChanged: (v) {
-                st.vibrate = v;
-                _save();
-              },
-            ),
-            SwitchListTile(
-              title: const Text('روشن ماندن صفحه'),
-              subtitle: const Text('وقتی ترمینال باز است', style: TextStyle(color: C.muted)),
-              value: st.wakelock,
-              onChanged: (v) {
-                st.wakelock = v;
-                _save();
-              },
-            ),
-          ]),
-          Section(title: 'اتصال', children: [
-            _choice<int>(context, 'Keep alive', st.keepAlive,
-                const {0: 'خاموش', 15: '۱۵ ثانیه', 30: '۳۰ ثانیه', 60: '۶۰ ثانیه'}, (v) => st.keepAlive = v,
-                note: 'جلوی قطع شدن اتصال بیکار را می‌گیرد'),
-            ListTile(
-              title: const Text('پاک کردن کلیدهای شناخته‌شده'),
-              subtitle: Text('${Store.i.knownHosts.length} سرور', style: const TextStyle(color: C.muted)),
-              onTap: () async {
-                if (await confirm(context, 'کلیدهای سرور', 'اثر انگشت همه سرورها پاک شود؟ در اتصال بعدی دوباره پرسیده می‌شود.',
-                    ok: 'پاک کن', danger: true)) {
-                  await Store.i.clearKnownHosts();
-                  _save();
-                }
-              },
-            ),
-          ]),
-          Section(title: 'امنیت', children: [
-            SwitchListTile(
-              title: const Text('قفل برنامه با PIN'),
-              value: st.lockEnabled && st.pinHash.isNotEmpty,
-              onChanged: (v) async {
-                if (v) {
-                  final pin = await Navigator.of(context).push<String>(
-                      MaterialPageRoute(fullscreenDialog: true, builder: (_) => const PinPad(setMode: true)));
-                  if (pin == null) return;
-                  st.pinHash = Store.hashPin(pin);
-                  st.lockEnabled = true;
-                } else {
-                  st.lockEnabled = false;
-                  st.pinHash = '';
-                  st.biometric = false;
-                }
-                _save();
-              },
-            ),
-            if (st.lockEnabled) ...[
               SwitchListTile(
-                title: const Text('باز کردن با اثر انگشت'),
-                value: st.biometric,
+                title: Text(s['keepScreenOn']),
+                subtitle: Text(s['whileTerminalOpen'], style: TextStyle(color: p.muted)),
+                value: st.wakelock,
+                onChanged: (v) {
+                  st.wakelock = v;
+                  _save();
+                },
+              ),
+            ]),
+            Section(title: s['connection'], children: [
+              _choice<int>(
+                  context,
+                  s['keepAlive'],
+                  st.keepAlive,
+                  {
+                    0: s['off'],
+                    for (final n in const [15, 30, 60]) n: s.f('nSeconds', {'n': s.num(n)})
+                  },
+                  (v) => st.keepAlive = v,
+                  note: s['keepAliveNote']),
+              ListTile(
+                title: Text(s['clearKnownHosts']),
+                subtitle: Text(s.f('nServers', {'n': Store.i.knownHosts.length}), style: TextStyle(color: p.muted)),
+                onTap: () async {
+                  if (await confirm(context, s['knownHostsTitle'], s['knownHostsBody'],
+                      ok: s['clearIt'], danger: true)) {
+                    await Store.i.clearKnownHosts();
+                    _save();
+                  }
+                },
+              ),
+            ]),
+            Section(title: s['security'], children: [
+              SwitchListTile(
+                title: Text(s['pinLock']),
+                value: st.lockEnabled && st.pinHash.isNotEmpty,
                 onChanged: (v) async {
                   if (v) {
-                    try {
-                      final auth = LocalAuthentication();
-                      final can = await auth.canCheckBiometrics && await auth.isDeviceSupported();
-                      if (!can) {
-                        if (context.mounted) toast(context, 'اثر انگشت روی این گوشی فعال نیست');
-                        return;
-                      }
-                      final ok = await auth.authenticate(
-                          localizedReason: 'تأیید اثر انگشت',
-                          options: AuthenticationOptions(biometricOnly: !Platform.isWindows));
-                      if (!ok) return;
-                    } catch (_) {
-                      if (context.mounted) toast(context, 'اثر انگشت در دسترس نیست');
-                      return;
-                    }
+                    final pin = await Navigator.of(context).push<String>(
+                        MaterialPageRoute(fullscreenDialog: true, builder: (_) => const PinPad(setMode: true)));
+                    if (pin == null) return;
+                    st.pinHash = Store.hashPin(pin);
+                    st.lockEnabled = true;
+                  } else {
+                    st.lockEnabled = false;
+                    st.pinHash = '';
+                    st.biometric = false;
                   }
-                  st.biometric = v;
                   _save();
                 },
               ),
-              _choice<int>(context, 'قفل خودکار بعد از', st.lockAfter,
-                  const {0: 'فوری', 60: '۱ دقیقه', 300: '۵ دقیقه', 900: '۱۵ دقیقه'}, (v) => st.lockAfter = v),
-            ],
+              if (st.lockEnabled) ...[
+                SwitchListTile(
+                  title: Text(s['bioUnlock']),
+                  value: st.biometric,
+                  onChanged: (v) async {
+                    if (v) {
+                      try {
+                        final auth = LocalAuthentication();
+                        final can = await auth.canCheckBiometrics && await auth.isDeviceSupported();
+                        if (!can) {
+                          if (context.mounted) toast(context, s['bioNotEnabled']);
+                          return;
+                        }
+                        final ok = await auth.authenticate(
+                            localizedReason: s['bioConfirm'],
+                            options: AuthenticationOptions(biometricOnly: !Platform.isWindows));
+                        if (!ok) return;
+                      } catch (_) {
+                        if (context.mounted) toast(context, s['bioUnavailable']);
+                        return;
+                      }
+                    }
+                    st.biometric = v;
+                    _save();
+                  },
+                ),
+                _choice<int>(
+                    context,
+                    s['autoLockAfter'],
+                    st.lockAfter,
+                    {
+                      0: s['immediately'],
+                      for (final n in const [1, 5, 15]) n * 60: s.f('nMinutes', {'n': s.num(n)})
+                    },
+                    (v) => st.lockAfter = v),
+              ],
+            ]),
+            Section(title: s['about'], children: [
+              ListTile(
+                title: const Text('MTerm'),
+                subtitle: Text(s['appTagline'], style: TextStyle(color: p.muted)),
+                trailing: Text('v$appVersion', style: TextStyle(color: p.muted)),
+              ),
+              ListTile(
+                title: Text(s['licenses']),
+                trailing: Icon(Icons.chevron_right, color: p.muted),
+                onTap: () =>
+                    showLicensePage(context: context, applicationName: 'MTerm', applicationVersion: appVersion),
+              ),
+            ]),
           ]),
-          Section(title: 'درباره', children: [
-            const ListTile(
-              title: Text('MTerm'),
-              subtitle: Text('ترمینال SSH سبک و سریع برای اندروید', style: TextStyle(color: C.muted)),
-              trailing: Text('v$appVersion', style: TextStyle(color: C.muted)),
-            ),
-            ListTile(
-              title: const Text('مجوزهای نرم‌افزارهای متن‌باز'),
-              trailing: const Icon(Icons.chevron_left, color: C.muted),
-              onTap: () => showLicensePage(context: context, applicationName: 'MTerm', applicationVersion: appVersion),
-            ),
-          ]),
-        ]),
-      ),
+        );
+      },
     );
   }
 
-  Widget _themePicker() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('رنگ‌بندی'),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 64,
-            child: ListView(scrollDirection: Axis.horizontal, children: [
-              for (final e in terminalThemes.entries)
-                GestureDetector(
+  Widget _themePicker(BuildContext context) {
+    final s = S.of(context);
+    final p = context.pal;
+    final mode = Theme.of(context).brightness;
+    final names = [autoTerminalTheme, ...terminalThemes.keys];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(s['colorScheme']),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 64,
+          child: ListView(scrollDirection: Axis.horizontal, children: [
+            for (final name in names)
+              Builder(builder: (_) {
+                final t = terminalThemeFor(name, mode);
+                final selected =
+                    st.theme == name || (name == autoTerminalTheme && !terminalThemes.containsKey(st.theme));
+                return GestureDetector(
                   onTap: () {
-                    st.theme = e.key;
+                    st.theme = name;
                     _save();
                   },
                   child: Container(
@@ -170,32 +223,40 @@ class SettingsScreen extends StatelessWidget {
                     margin: const EdgeInsetsDirectional.only(end: 10),
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: e.value.background,
+                      color: t.background,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: st.theme == e.key ? C.accent : C.line, width: st.theme == e.key ? 2.5 : 1),
+                      border: Border.all(color: selected ? p.accent : p.line, width: selected ? 2.5 : 1),
                     ),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('\$ ls', textDirection: TextDirection.ltr, maxLines: 1, overflow: TextOverflow.clip,
-                          style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11, color: e.value.foreground)),
+                      Text('\$ ls',
+                          textDirection: TextDirection.ltr,
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11, color: t.foreground)),
                       const Spacer(),
-                      Text(e.key, textDirection: TextDirection.ltr, maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: e.value.foreground.withValues(alpha: 0.8))),
+                      Text(name == autoTerminalTheme ? s['themeAuto'] : name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: t.foreground.withValues(alpha: 0.8))),
                     ]),
                   ),
-                ),
-            ]),
-          ),
-        ]),
-      );
+                );
+              }),
+          ]),
+        ),
+      ]),
+    );
+  }
 
   Widget _choice<T>(BuildContext context, String title, T value, Map<T, String> options, void Function(T) set,
       {String? note}) {
+    final p = context.pal;
     return ListTile(
       title: Text(title),
-      subtitle: note == null ? null : Text(note, style: const TextStyle(color: C.muted, fontSize: 12)),
+      subtitle: note == null ? null : Text(note, style: TextStyle(color: p.muted, fontSize: 12)),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(options[value] ?? '$value', style: const TextStyle(color: C.muted)),
-        const Icon(Icons.chevron_left, color: C.muted),
+        Text(options[value] ?? '$value', style: TextStyle(color: p.muted)),
+        Icon(Icons.chevron_right, color: p.muted),
       ]),
       onTap: () async {
         final r = await showModalBottomSheet<T>(
@@ -208,7 +269,7 @@ class SettingsScreen extends StatelessWidget {
               for (final e in options.entries)
                 ListTile(
                   title: Text(e.value),
-                  trailing: e.key == value ? const Icon(Icons.check, color: C.accent) : null,
+                  trailing: e.key == value ? Icon(Icons.check, color: p.accent) : null,
                   onTap: () => Navigator.pop(c, e.key),
                 ),
               const SizedBox(height: 8),
@@ -233,18 +294,20 @@ class KeysEditor extends StatelessWidget {
       listenable: Store.i,
       builder: (context, _) {
         final st = Store.i.settings;
+        final s = S.of(context);
+        final p = context.pal;
         return Scaffold(
-          appBar: AppBar(title: const Text('نوار کلید'), actions: [
+          appBar: AppBar(title: Text(s['keyBar']), actions: [
             TextButton(
               onPressed: () {
                 st.keys = List.of(AppSettings.defaultKeys);
                 Store.i.saveSettings();
               },
-              child: const Text('پیش‌فرض'),
+              child: Text(s['defaults']),
             ),
           ]),
           body: ListView(padding: const EdgeInsets.all(16), children: [
-            const Text('کلیدهای فعال (برای جابه‌جایی بکشید):', style: TextStyle(color: C.muted)),
+            Text(s['activeKeys'], style: TextStyle(color: p.muted)),
             const SizedBox(height: 10),
             Directionality(
               textDirection: TextDirection.ltr,
@@ -260,10 +323,10 @@ class KeysEditor extends StatelessWidget {
                   for (final k in st.keys)
                     ListTile(
                       key: ValueKey(k),
-                      tileColor: C.surface,
+                      tileColor: p.surface,
                       title: Text(k, style: const TextStyle(fontFamily: 'JetBrainsMono')),
                       trailing: IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, color: C.red),
+                        icon: Icon(Icons.remove_circle_outline, color: p.red),
                         onPressed: () {
                           st.keys.remove(k);
                           Store.i.saveSettings();
@@ -274,7 +337,7 @@ class KeysEditor extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const Text('افزودن کلید:', style: TextStyle(color: C.muted)),
+            Text(s['addKey'], style: TextStyle(color: p.muted)),
             const SizedBox(height: 10),
             Directionality(
               textDirection: TextDirection.ltr,

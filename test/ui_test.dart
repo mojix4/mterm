@@ -1,6 +1,8 @@
 // End-to-end UI flows that need no SSH server (run in CI).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mterm/builtin_commands.dart';
+import 'package:mterm/main.dart';
 import 'package:mterm/models.dart';
 import 'package:mterm/screens/common.dart';
 import 'package:mterm/screens/lock_screen.dart';
@@ -35,6 +37,14 @@ Future<void> tapText(WidgetTester t, String s, {bool last = false}) async {
   await reveal(t, f);
   await t.pumpAndSettle();
   await t.tap(f);
+  await t.pumpAndSettle();
+}
+
+/// Scrolls [f] to the middle of its list (clear of the floating action button).
+Future<void> center(WidgetTester t, Finder f) async {
+  await t.ensureVisible(f);
+  await t.pumpAndSettle();
+  Scrollable.ensureVisible(t.element(f), alignment: 0.4);
   await t.pumpAndSettle();
 }
 
@@ -215,7 +225,7 @@ void main() {
       expect(Store.i.snippets.length, before + 1);
 
       // edit (long press)
-      await t.ensureVisible(find.text('ری‌استارت وب'));
+      await center(t, find.text('ری‌استارت وب'));
       await t.longPress(find.text('ری‌استارت وب'));
       await t.pumpAndSettle();
       expect(find.text('ویرایش دستور'), findsOneWidget);
@@ -232,7 +242,7 @@ void main() {
       await launch(t);
       await t.tap(find.text('دستورها').last);
       await t.pumpAndSettle();
-      await t.ensureVisible(find.text('ری‌استارت وب'));
+      await center(t, find.text('ری‌استارت وب'));
       await t.tap(find.text('ری‌استارت وب'));
       await t.pump();
       expect(find.text('اول از بخش سرورها به یک سرور وصل شوید'), findsOneWidget);
@@ -275,6 +285,10 @@ void main() {
       await t.pumpAndSettle();
       final st = Store.i.settings;
 
+      // the colour-scheme strip scrolls horizontally ('Auto' comes first)
+      final strip = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection != AxisDirection.down).first;
+      await t.scrollUntilVisible(find.text('Dracula'), 80, scrollable: strip);
+      await t.pumpAndSettle();
       await t.tap(find.text('Dracula'));
       await t.pumpAndSettle();
       expect(st.theme, 'Dracula');
@@ -618,6 +632,250 @@ void main() {
           ..pinHash = '';
         await t.pumpWidget(const SizedBox());
         await t.pumpAndSettle();
+      });
+    }
+  });
+
+  group('appearance & language', () {
+    testWidgets('language switches live, with the right direction, and persists', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      expect(Directionality.of(t.element(find.byType(HomeShell))), TextDirection.rtl);
+      await t.tap(find.text('تنظیمات').last);
+      await t.pumpAndSettle();
+      await tapText(t, 'زبان');
+      await tapText(t, 'English', last: true);
+      expect(Store.i.settings.language, 'en');
+      expect(find.text('Settings'), findsWidgets);
+      expect(find.text('Servers'), findsWidgets);
+      expect(find.text('Appearance'), findsOneWidget);
+      expect(Directionality.of(t.element(find.byType(HomeShell))), TextDirection.ltr);
+
+      await tapText(t, 'Language');
+      await tapText(t, 'Deutsch', last: true);
+      expect(find.text('Einstellungen'), findsWidgets);
+
+      await tapText(t, 'Sprache');
+      await tapText(t, 'العربية', last: true);
+      expect(find.text('الإعدادات'), findsWidgets);
+      expect(Directionality.of(t.element(find.byType(HomeShell))), TextDirection.rtl);
+
+      await reloadStore();
+      expect(Store.i.settings.language, 'ar');
+
+      // "System" follows the device (en_US in tests)
+      await tapText(t, 'اللغة');
+      await tapText(t, 'لغة النظام', last: true);
+      expect(Store.i.settings.language, 'system');
+      expect(find.text('Settings'), findsWidgets);
+    });
+
+    testWidgets('theme switches live between dark and light', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      Brightness b() => Theme.of(t.element(find.byType(HomeShell))).brightness;
+      await t.tap(find.text('تنظیمات').last);
+      await t.pumpAndSettle();
+      await tapText(t, 'پوسته');
+      await tapText(t, 'تیره');
+      expect(Store.i.settings.appTheme, 'dark');
+      expect(b(), Brightness.dark);
+      expect(t.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.dark);
+      await tapText(t, 'پوسته');
+      await tapText(t, 'روشن', last: true);
+      expect(b(), Brightness.light);
+      expect(Theme.of(t.element(find.byType(HomeShell))).scaffoldBackgroundColor, Palette.light.bg);
+      await reloadStore();
+      expect(Store.i.settings.appTheme, 'light');
+      // the terminal's Auto scheme follows the app mode
+      expect(terminalThemeFor('Auto', Brightness.light), terminalThemes['Light']);
+      expect(terminalThemeFor('Auto', Brightness.dark), terminalThemes['Termius']);
+    });
+  });
+
+  group('ready commands', () {
+    Future<void> openReady(WidgetTester t) async {
+      await t.tap(find.text('دستورها').last);
+      await t.pumpAndSettle();
+      await t.tap(find.text('دستورهای آماده'));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('grouped, copy and save to my commands; not deletable', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      await openReady(t);
+      expect(find.text('سرور'), findsWidgets);
+      expect(find.text(builtinCommands.first.cmd), findsOneWidget);
+      final before = Store.i.snippets.length;
+
+      final bbr = builtinCommands.firstWhere((c) => c.id == 'bbr');
+      await reveal(t, find.byKey(const ValueKey('builtin-bbr')));
+      await t.tap(find.byKey(const ValueKey('builtin-bbr')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('کپی'));
+      await t.pumpAndSettle();
+      expect(clipboard, bbr.cmd);
+
+      await t.tap(find.byKey(const ValueKey('builtin-bbr')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('ذخیره در دستورهای من'));
+      await t.pumpAndSettle();
+      expect(Store.i.snippets.length, before + 1);
+      expect(Store.i.snippets.last.cmd, bbr.cmd);
+      expect(Store.i.snippets.last.name, 'فعال‌سازی BBR');
+
+      // long-press only shows the same actions: no editor, no delete for built-ins
+      await t.longPress(find.byKey(const ValueKey('builtin-bbr')));
+      await t.pumpAndSettle();
+      expect(find.text('ویرایش دستور'), findsNothing);
+      expect(find.text('حذف'), findsNothing);
+      await t.tapAt(const Offset(5, 5));
+      await t.pumpAndSettle();
+
+      // search covers the library (back at the top of the list)
+      final list = find.ancestor(of: find.byKey(const ValueKey('builtin-bbr')), matching: find.byType(Scrollable));
+      await t.drag(list.first, const Offset(0, 3000));
+      await t.pumpAndSettle();
+      await t.enterText(find.byType(TextField).last, 'marzban');
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('builtin-marzbanMysql')), findsOneWidget);
+      expect(find.byKey(const ValueKey('builtin-update')), findsNothing);
+    });
+
+    testWidgets('installers and reboot ask before running', (t) async {
+      await setSize(t, phone);
+      final h = Host(id: 'x', label: 'لوکال', host: '127.0.0.1', port: 1, user: 'u');
+      final s = Sessions.i.open(h);
+      s.status = SessStatus.connected; // fake a live session (no shell: run() writes nothing)
+      await launch(t);
+      await openReady(t);
+      await reveal(t, find.byKey(const ValueKey('builtin-reboot')));
+      await t.tap(find.byKey(const ValueKey('builtin-reboot')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('اجرا'));
+      await t.pumpAndSettle();
+      expect(find.text('این دستور اجرا شود؟'), findsOneWidget);
+      await t.tap(find.widgetWithText(TextButton, 'انصراف'));
+      await t.pumpAndSettle();
+      expect(find.byType(TerminalView), findsNothing);
+      expect(s.typed, isEmpty);
+
+      await t.tap(find.byKey(const ValueKey('builtin-reboot')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('اجرا'));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(TextButton, 'اجرا'));
+      await t.pumpAndSettle();
+      expect(find.byType(TerminalView), findsOneWidget);
+      expect(s.typed.first, 'sudo reboot');
+      await back(t);
+
+      // a harmless server command runs without asking
+      await reveal(t, find.byKey(const ValueKey('builtin-sysinfo')));
+      await t.tap(find.byKey(const ValueKey('builtin-sysinfo')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('اجرا'));
+      await t.pumpAndSettle();
+      expect(find.text('این دستور اجرا شود؟'), findsNothing);
+      expect(s.typed.first, 'free -h && df -h && uptime');
+      await back(t);
+      s.status = SessStatus.closed;
+    });
+  });
+
+  group('password prompt', () {
+    testWidgets('remember is on by default; returns what was typed', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      final h = Host(id: 'p', label: 'p', host: '10.0.0.1', user: 'root');
+      var r = passwordPrompt(h, wrong: true);
+      await t.pumpAndSettle();
+      expect(find.text('رمز سرور'), findsOneWidget);
+      expect(find.text('رمز اشتباه بود، دوباره وارد کنید'), findsOneWidget);
+      expect(t.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isTrue);
+      await t.enterText(find.byKey(const ValueKey('pw-field')), 'n3w-pass');
+      await t.tap(find.widgetWithText(TextButton, 'اتصال'));
+      await t.pumpAndSettle();
+      final a = await r;
+      expect(a?.password, 'n3w-pass');
+      expect(a?.remember, isTrue);
+
+      r = passwordPrompt(h);
+      await t.pumpAndSettle();
+      expect(find.text('رمز اشتباه بود، دوباره وارد کنید'), findsNothing);
+      await t.enterText(find.byKey(const ValueKey('pw-field')), 'once');
+      await t.tap(find.text('رمز را به خاطر بسپار'));
+      await t.pump();
+      await t.testTextInput.receiveAction(TextInputAction.done);
+      await t.pumpAndSettle();
+      final b = await r;
+      expect(b?.password, 'once');
+      expect(b?.remember, isFalse);
+
+      r = passwordPrompt(h);
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(TextButton, 'انصراف'));
+      await t.pumpAndSettle();
+      expect(await r, isNull);
+    });
+
+    test('savePassword replaces the stored password under the same key', () async {
+      await Store.i.upsertHost(Host(id: 'q', label: 'q', host: 'h', user: 'u'), HostSecret(password: 'old'));
+      expect(secure['pw_q'], 'old');
+      await Store.i.savePassword('q', 'new');
+      expect(secure['pw_q'], 'new');
+      expect((await Store.i.secret('q')).password, 'new');
+    });
+  });
+
+  group('layout in every language (no overflow)', () {
+    for (final lang in ['en', 'ar', 'tr', 'ru', 'de', 'fr', 'es', 'zh']) {
+      testWidgets('main screens fit on a small phone in $lang', (t) async {
+        await setSize(t, const Size(360, 640));
+        Store.i.settings
+          ..language = lang
+          ..appTheme = lang.hashCode.isEven ? 'light' : 'dark';
+        await Store.i.saveSettings();
+        await Store.i.upsertHost(Host(id: 'a', label: 'srv', host: 'example.com', user: 'root'), HostSecret());
+        final s = Sessions.i.open(Store.i.hosts.first);
+        s
+          ..status = SessStatus.failed
+          ..errorKey = 'errUnreachable'
+          ..errorArg = 'Network is unreachable';
+        await launch(t);
+        final nav = find.byType(NavigationDestination);
+        await t.tap(nav.at(1));
+        await t.pumpAndSettle();
+        await t.tap(find.byIcon(Icons.auto_awesome).first); // "Ready commands" segment
+        await t.pumpAndSettle();
+        final lib = find.descendant(of: find.byKey(const ValueKey('snippets-list')), matching: find.byType(Scrollable));
+        await t.scrollUntilVisible(find.byKey(const ValueKey('builtin-backpackMenu')), 200, scrollable: lib.first);
+        await t.pumpAndSettle();
+        await t.tap(find.byKey(const ValueKey('builtin-backpackMenu')));
+        await t.pumpAndSettle();
+        await t.tapAt(const Offset(5, 5));
+        await t.pumpAndSettle();
+        await t.tap(nav.at(2));
+        await t.pumpAndSettle();
+        await t.drag(_vScroll.last, const Offset(0, -3000));
+        await t.pumpAndSettle();
+        await t.tap(nav.at(0));
+        await t.pumpAndSettle();
+        await t.tap(find.byType(FloatingActionButton).first);
+        await t.pumpAndSettle();
+        await t.tap(find.byIcon(Icons.key));
+        await t.pumpAndSettle();
+        await back(t);
+        await t.tap(find.text('srv').first); // the open (failed) session
+        await t.pumpAndSettle();
+        expect(find.byType(TerminalView), findsOneWidget);
+        await back(t);
+        final pw = passwordPrompt(Store.i.hosts.first, wrong: true);
+        await t.pumpAndSettle();
+        await t.tap(find.byType(TextButton).first);
+        await t.pumpAndSettle();
+        expect(await pw, isNull);
       });
     }
   });
