@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
@@ -94,7 +95,7 @@ class _PinPadState extends State<PinPad> with SingleTickerProviderStateMixin {
       if (!await auth.isDeviceSupported()) return;
       final ok = await auth.authenticate(
         localizedReason: 'برای باز کردن MTerm',
-        options: const AuthenticationOptions(biometricOnly: true, stickyAuth: true),
+        options: AuthenticationOptions(biometricOnly: !Platform.isWindows, stickyAuth: true),
       );
       if (ok) widget.onUnlocked?.call();
     } catch (_) {}

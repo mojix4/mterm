@@ -1,4 +1,4 @@
-name: Build APK
+name: Build MTerm
 
 on:
   push:
@@ -55,10 +55,44 @@ jobs:
           name: MTerm-apk
           path: MTerm-v1.0.${{ github.run_number }}.apk
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath MTerm-v1.0.${{ github.run_number }}-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MTerm-windows
+          path: MTerm-v1.0.${{ github.run_number }}-windows-x64.zip
+
+  release:
+    needs: [build, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: MTerm v1.0.${{ github.run_number }}
-          files: MTerm-v1.0.${{ github.run_number }}.apk
+          files: dist/*
           make_latest: true

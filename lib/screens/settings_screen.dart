@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 
@@ -118,7 +119,7 @@ class SettingsScreen extends StatelessWidget {
                       }
                       final ok = await auth.authenticate(
                           localizedReason: 'تأیید اثر انگشت',
-                          options: const AuthenticationOptions(biometricOnly: true));
+                          options: AuthenticationOptions(biometricOnly: !Platform.isWindows));
                       if (!ok) return;
                     } catch (_) {
                       if (context.mounted) toast(context, 'اثر انگشت در دسترس نیست');
