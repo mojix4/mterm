@@ -37,6 +37,9 @@ jobs:
         env:
           MTERM_KEY_PASS: ${{ secrets.MTERM_KEY_PASS }}
         run: |
+          MTERM_KEY_PASS="$(printf '%s' "$MTERM_KEY_PASS" | tr -d ' \r\n\t')"
+          export MTERM_KEY_PASS
+          echo "key length: ${#MTERM_KEY_PASS}, hash: $(printf '%s' "$MTERM_KEY_PASS" | sha256sum | cut -c1-8)"
           if [ -z "$MTERM_KEY_PASS" ]; then echo "::error::Secret MTERM_KEY_PASS is missing (Settings > Secrets and variables > Actions)"; exit 1; fi
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in android/app/mterm-release.jks.enc -out android/app/mterm-release.jks -pass env:MTERM_KEY_PASS
           printf "storeFile=mterm-release.jks\nstorePassword=%s\nkeyAlias=mterm\nkeyPassword=%s\n" "$MTERM_KEY_PASS" "$MTERM_KEY_PASS" > android/key.properties
