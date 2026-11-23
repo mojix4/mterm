@@ -186,7 +186,7 @@ void main() {
       await shot(t, '3_settings');
       await t.tap(find.text('سرورها').last);
       await t.pumpAndSettle();
-      await t.tap(find.byType(FloatingActionButton));
+      await t.tap(find.byKey(const ValueKey('fab-add-host')));
       await shot(t, '4_add_host');
       addTearDown(t.view.reset);
     });

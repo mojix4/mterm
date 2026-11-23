@@ -157,4 +157,13 @@ const Map<String, String> ru = {
   'errRefused': 'В соединении отказано: порт SSH закрыт',
   'errNotFound': 'Адрес сервера не найден',
   'errUnreachable': 'Сервер недоступен: {msg}',
+
+  // quick connect
+  'quickConnect': 'Быстрое подключение',
+  'quickConnectHint': 'Подключитесь к серверу, не сохраняя его.',
+  'saveServerQ': 'Сохранить этот сервер?',
+  'saveServerBody': 'Он останется в списке серверов, и в следующий раз хватит одного касания.',
+  'notNow': 'Не сейчас',
+  'saveServer': 'Сохранить этот сервер',
+  'serverSaved': 'Сервер сохранён',
 };

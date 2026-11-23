@@ -155,4 +155,13 @@ const Map<String, String> zh = {
   'errRefused': '连接被拒绝；SSH 端口未开放',
   'errNotFound': '找不到服务器地址',
   'errUnreachable': '无法访问服务器：{msg}',
+
+  // quick connect
+  'quickConnect': '快速连接',
+  'quickConnectHint': '无需先保存，直接连接服务器。',
+  'saveServerQ': '保存此服务器？',
+  'saveServerBody': '它会保留在服务器列表中，下次一键即可连接。',
+  'notNow': '以后再说',
+  'saveServer': '保存此服务器',
+  'serverSaved': '服务器已保存',
 };

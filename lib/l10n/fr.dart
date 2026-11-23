@@ -160,4 +160,13 @@ const Map<String, String> fr = {
   'errRefused': 'Connexion refusée ; le port SSH est fermé',
   'errNotFound': 'Adresse du serveur introuvable',
   'errUnreachable': 'Serveur injoignable : {msg}',
+
+  // quick connect
+  'quickConnect': 'Connexion rapide',
+  'quickConnectHint': "Connectez-vous à un serveur sans l'enregistrer d'abord.",
+  'saveServerQ': 'Enregistrer ce serveur ?',
+  'saveServerBody': 'Il restera dans votre liste de serveurs : la prochaine fois, un seul appui suffira.',
+  'notNow': 'Pas maintenant',
+  'saveServer': 'Enregistrer ce serveur',
+  'serverSaved': 'Serveur enregistré',
 };

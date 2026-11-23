@@ -157,4 +157,13 @@ const Map<String, String> tr = {
   'errRefused': 'Bağlantı reddedildi; SSH portu kapalı',
   'errNotFound': 'Sunucu adresi bulunamadı',
   'errUnreachable': 'Sunucuya ulaşılamıyor: {msg}',
+
+  // quick connect
+  'quickConnect': 'Hızlı bağlan',
+  'quickConnectHint': 'Önce kaydetmeden bir sunucuya bağlanın.',
+  'saveServerQ': 'Bu sunucu kaydedilsin mi?',
+  'saveServerBody': 'Sunucular listenizde kalır, bir dahaki sefere tek dokunuşla bağlanırsınız.',
+  'notNow': 'Şimdi değil',
+  'saveServer': 'Bu sunucuyu kaydet',
+  'serverSaved': 'Sunucu kaydedildi',
 };

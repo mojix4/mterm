@@ -7,6 +7,7 @@ import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
 import 'host_edit_screen.dart';
+import 'quick_connect.dart';
 
 class HostsScreen extends StatefulWidget {
   const HostsScreen({super.key});
@@ -34,14 +35,36 @@ class _HostsScreenState extends State<HostsScreen> {
             .toList()
           ..sort((a, b) => (b.lastUsed ?? '').compareTo(a.lastUsed ?? ''));
         return Scaffold(
-          appBar: AppBar(title: Text(s['navHosts'])),
-          floatingActionButton: FloatingActionButton(
-            heroTag: 'fab_hosts',
-            onPressed: () => _edit(null),
-            backgroundColor: p.accent,
-            foregroundColor: Colors.white,
-            child: const Icon(Icons.add),
-          ),
+          appBar: AppBar(title: Text(s['navHosts']), actions: [
+            IconButton(
+              key: const ValueKey('quick-connect'),
+              tooltip: s['quickConnect'],
+              icon: const Icon(Icons.flash_on_rounded),
+              onPressed: () => quickConnect(context),
+            ),
+            const SizedBox(width: 4),
+          ]),
+          floatingActionButton: Column(mainAxisSize: MainAxisSize.min, children: [
+            FloatingActionButton.small(
+              key: const ValueKey('fab-quick-connect'),
+              heroTag: 'fab_quick',
+              tooltip: s['quickConnect'],
+              onPressed: () => quickConnect(context),
+              backgroundColor: p.surface2,
+              foregroundColor: p.accent,
+              child: const Icon(Icons.flash_on_rounded),
+            ),
+            const SizedBox(height: 12),
+            FloatingActionButton(
+              key: const ValueKey('fab-add-host'),
+              heroTag: 'fab_hosts',
+              tooltip: s['addHost'],
+              onPressed: () => _edit(null),
+              backgroundColor: p.accent,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.add),
+            ),
+          ]),
           body: Store.i.hosts.isEmpty && sessions.isEmpty
               ? _empty(s, p)
               : ListView(padding: const EdgeInsets.fromLTRB(14, 0, 14, 100), children: [
@@ -128,6 +151,12 @@ class _HostsScreenState extends State<HostsScreen> {
             const SizedBox(height: 24),
             FilledButton.icon(
                 onPressed: () => _edit(null), icon: const Icon(Icons.add), label: Text(s['addHost'])),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+                key: const ValueKey('empty-quick-connect'),
+                onPressed: () => quickConnect(context),
+                icon: const Icon(Icons.flash_on_rounded),
+                label: Text(s['quickConnect'])),
           ]),
         ),
       );

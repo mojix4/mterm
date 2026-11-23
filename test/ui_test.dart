@@ -2,10 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mterm/builtin_commands.dart';
+import 'package:mterm/l10n.dart';
 import 'package:mterm/main.dart';
 import 'package:mterm/models.dart';
 import 'package:mterm/screens/common.dart';
 import 'package:mterm/screens/lock_screen.dart';
+import 'package:mterm/screens/quick_connect.dart';
 import 'package:mterm/session.dart';
 import 'package:mterm/store.dart';
 import 'package:mterm/themes.dart';
@@ -66,7 +68,7 @@ void main() {
       await launch(t);
       expect(find.text('هنوز سروری اضافه نکرده‌اید'), findsOneWidget);
 
-      await t.tap(find.byType(FloatingActionButton));
+      await t.tap(find.byKey(const ValueKey('fab-add-host')));
       await t.pumpAndSettle();
       expect(find.text('سرور جدید'), findsOneWidget);
       await t.enterText(fieldLabeled('نام (اختیاری)'), 'سرور تست');
@@ -131,7 +133,7 @@ void main() {
     testWidgets('add with SSH key (pasted) + validation errors', (t) async {
       await setSize(t, phone);
       await launch(t);
-      await t.tap(find.byType(FloatingActionButton));
+      await t.tap(find.byKey(const ValueKey('fab-add-host')));
       await t.pumpAndSettle();
 
       // validation: empty address, empty user, bad port
@@ -530,7 +532,7 @@ void main() {
       await setSize(t, const Size(360, 640), keyboard: 320);
       await launch(t);
       expect(find.text('هنوز سروری اضافه نکرده‌اید'), findsOneWidget);
-      await t.tap(find.byType(FloatingActionButton).first);
+      await t.tap(find.byKey(const ValueKey('fab-add-host')));
       await t.pumpAndSettle();
       await t.enterText(fieldLabeled('آدرس سرور'), 'x');
       await t.pumpAndSettle();
@@ -588,7 +590,7 @@ void main() {
         // host edit, both auth modes, with keyboard up
         await t.tap(find.text('سرورها').last);
         await t.pumpAndSettle();
-        await t.tap(find.byType(FloatingActionButton).first);
+        await t.tap(find.byKey(const ValueKey('fab-add-host')));
         await t.pumpAndSettle();
         t.view.viewInsets = FakeViewPadding(bottom: kb * t.view.devicePixelRatio);
         await t.pumpAndSettle();
@@ -862,7 +864,7 @@ void main() {
         await t.pumpAndSettle();
         await t.tap(nav.at(0));
         await t.pumpAndSettle();
-        await t.tap(find.byType(FloatingActionButton).first);
+        await t.tap(find.byKey(const ValueKey('fab-add-host')));
         await t.pumpAndSettle();
         await t.tap(find.byIcon(Icons.key));
         await t.pumpAndSettle();
@@ -876,6 +878,180 @@ void main() {
         await t.tap(find.byType(TextButton).first);
         await t.pumpAndSettle();
         expect(await pw, isNull);
+      });
+    }
+  });
+
+  group('quick connect', () {
+    Future<void> openForm(WidgetTester t, {String via = 'quick-connect'}) async {
+      await t.tap(find.byKey(ValueKey(via)));
+      await t.pumpAndSettle();
+      expect(find.byType(QuickConnectDialog), findsOneWidget);
+    }
+
+    testWidgets('opens from app bar, FAB and empty list; validates like the host form', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      expect(find.byTooltip('اتصال سریع'), findsWidgets);
+
+      await openForm(t, via: 'empty-quick-connect');
+      expect(find.text('اتصال سریع'), findsWidgets);
+      await t.tap(find.text('انصراف'));
+      await t.pumpAndSettle();
+      expect(find.byType(QuickConnectDialog), findsNothing);
+      await openForm(t, via: 'fab-quick-connect');
+      await t.tap(find.text('انصراف'));
+      await t.pumpAndSettle();
+      await openForm(t);
+
+      // defaults: port 22, user root, password hidden
+      expect(t.widget<TextFormField>(find.byKey(const ValueKey('qc-port'))).controller!.text, '22');
+      expect(t.widget<TextFormField>(find.byKey(const ValueKey('qc-user'))).controller!.text, 'root');
+      EditableText pwField() =>
+          t.widget<EditableText>(find.descendant(of: find.byKey(const ValueKey('qc-password')), matching: find.byType(EditableText)));
+      expect(pwField().obscureText, isTrue);
+      await t.tap(find.byKey(const ValueKey('qc-show-pw')));
+      await t.pump();
+      expect(pwField().obscureText, isFalse);
+
+      // empty address, bad port, empty user: errors, nothing opens
+      await t.enterText(find.byKey(const ValueKey('qc-port')), '70000');
+      await t.enterText(find.byKey(const ValueKey('qc-user')), ' ');
+      await t.tap(find.byKey(const ValueKey('qc-connect')));
+      await t.pumpAndSettle();
+      expect(find.text('آدرس را وارد کنید'), findsOneWidget);
+      expect(find.text('نامعتبر'), findsOneWidget);
+      expect(find.text('نام کاربری را وارد کنید'), findsOneWidget);
+      expect(Sessions.i.list, isEmpty);
+      await t.enterText(find.byKey(const ValueKey('qc-port')), '0');
+      await t.tap(find.byKey(const ValueKey('qc-connect')));
+      await t.pumpAndSettle();
+      expect(find.text('نامعتبر'), findsOneWidget);
+      expect(find.byType(QuickConnectDialog), findsOneWidget);
+    });
+
+    testWidgets('connects without saving anything (refused port)', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      await openForm(t);
+      await t.enterText(find.byKey(const ValueKey('qc-host')), ' 127.0.0.1 ');
+      await t.enterText(find.byKey(const ValueKey('qc-port')), '1');
+      await t.enterText(find.byKey(const ValueKey('qc-user')), 'admin');
+      await t.enterText(find.byKey(const ValueKey('qc-password')), 'pw-1');
+      await t.tap(find.byKey(const ValueKey('qc-connect')));
+      await t.pump();
+      final s = Sessions.i.list.single;
+      expect(s.transient, isTrue);
+      expect(s.host.host, '127.0.0.1');
+      expect(s.host.port, 1);
+      expect(s.host.user, 'admin');
+      await waitFor(t, () => s.status == SessStatus.failed, reason: 'refused');
+      await t.pumpAndSettle();
+      expect(find.byType(TerminalView), findsOneWidget);
+      expect(Store.i.hosts, isEmpty);
+      expect(secure.keys.where((k) => k.startsWith('pw_')), isEmpty);
+      expect(find.text('این سرور ذخیره شود؟'), findsNothing, reason: 'only offered after a login');
+      await back(t);
+      // shown under open sessions only
+      expect(find.text('127.0.0.1'), findsOneWidget);
+      await closeAll(t);
+    });
+
+    testWidgets('after login: Save stores host + password, it shows in the list', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      final h = Host(id: 'qc1', label: '', host: '10.1.2.3', port: 2200, user: 'root');
+      final s = Sessions.i.open(h, transient: true, password: 'typed-pw');
+      openSession(navKey.currentContext!, s);
+      await t.pumpAndSettle();
+      expect(find.text('این سرور ذخیره شود؟'), findsNothing);
+      // menu offers saving while the session is transient
+      await t.tap(find.byType(PopupMenuButton<String>));
+      await t.pumpAndSettle();
+      expect(find.text('ذخیرهٔ این سرور'), findsOneWidget);
+      await t.tapAt(const Offset(5, 5));
+      await t.pumpAndSettle();
+
+      s.debugSetStatus(SessStatus.connected);
+      await t.pumpAndSettle();
+      expect(find.text('این سرور ذخیره شود؟'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('save-server-yes')));
+      await t.pumpAndSettle();
+      expect(find.text('سرور ذخیره شد'), findsOneWidget);
+      expect(s.transient, isFalse);
+      expect(Store.i.hosts.single.label, '10.1.2.3');
+      expect(Store.i.hosts.single.port, 2200);
+      expect(secure['pw_qc1'], 'typed-pw');
+      // offered only once, menu item gone
+      s.debugSetStatus(SessStatus.connected);
+      await t.pump(const Duration(seconds: 3));
+      await t.pumpAndSettle();
+      expect(find.text('این سرور ذخیره شود؟'), findsNothing);
+      await t.tap(find.byType(PopupMenuButton<String>));
+      await t.pumpAndSettle();
+      expect(find.text('ذخیرهٔ این سرور'), findsNothing);
+      await t.tapAt(const Offset(5, 5));
+      await t.pumpAndSettle();
+      await back(t);
+      expect(find.text('10.1.2.3'), findsNWidgets(2)); // open session + saved host
+      // survives a relaunch
+      await reloadStore();
+      expect(Store.i.hosts.single.host, '10.1.2.3');
+      expect((await Store.i.secret('qc1')).password, 'typed-pw');
+      await closeAll(t);
+    });
+
+    testWidgets('Not now saves nothing; Save from the menu later still works', (t) async {
+      await setSize(t, phone);
+      await launch(t);
+      final s = Sessions.i.open(Host(id: 'qc2', label: '', host: '10.9.9.9', user: 'root'), transient: true);
+      openSession(navKey.currentContext!, s);
+      await t.pumpAndSettle();
+      s.debugSetStatus(SessStatus.connected);
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('save-server-later')));
+      await t.pumpAndSettle();
+      expect(find.text('این سرور ذخیره شود؟'), findsNothing);
+      expect(Store.i.hosts, isEmpty);
+      expect(secure, isEmpty);
+      await t.tap(find.byType(PopupMenuButton<String>));
+      await t.pumpAndSettle();
+      await t.tap(find.text('ذخیرهٔ این سرور'));
+      await t.pumpAndSettle();
+      expect(Store.i.hosts.single.label, '10.9.9.9');
+      expect(secure['pw_qc2'], '', reason: 'no password was typed');
+      await t.pump(const Duration(seconds: 3));
+      await closeAll(t);
+    });
+
+    for (final lang in languageCodes) {
+      testWidgets('form and save prompt fit a small phone with keyboard in $lang', (t) async {
+        await setSize(t, const Size(360, 640), keyboard: 300);
+        Store.i.settings.language = lang;
+        await Store.i.saveSettings();
+        await loadFonts();
+        await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await launch(t);
+        expect(Directionality.of(t.element(find.byKey(const ValueKey('quick-connect')))),
+            rtlLanguages.contains(lang) ? TextDirection.rtl : TextDirection.ltr);
+        await openForm(t);
+        await t.enterText(find.byKey(const ValueKey('qc-port')), '');
+        await t.enterText(find.byKey(const ValueKey('qc-user')), '');
+        await t.tap(find.byKey(const ValueKey('qc-connect')));
+        await t.pumpAndSettle();
+        expect(find.byType(QuickConnectDialog), findsOneWidget);
+        await t.tap(find.byType(TextButton).first); // cancel
+        await t.pumpAndSettle();
+        t.view.resetViewInsets();
+        final s = Sessions.i.open(Host(id: 'q$lang', label: '', host: '203.0.113.200', user: 'root'), transient: true);
+        openSession(navKey.currentContext!, s);
+        await t.pumpAndSettle();
+        s.debugSetStatus(SessStatus.connected);
+        await t.pumpAndSettle();
+        expect(find.byKey(const ValueKey('save-server-snack')), findsOneWidget);
+        await t.tap(find.byKey(const ValueKey('save-server-later')));
+        await t.pumpAndSettle();
+        await closeAll(t);
       });
     }
   });

@@ -287,6 +287,7 @@ void main() {
     await t.tap(find.widgetWithText(TextButton, 'اتصال'));
     await waitFor(t, () => s.status == SessStatus.connected, reason: 'login with the typed password');
     expect(secure['pw_h'], sshPass);
+    await t.pump(const Duration(milliseconds: 500)); // password dialog closes
     await t.tap(find.byType(BackButton));
     await t.pumpAndSettle();
     await closeAll(t);
@@ -311,6 +312,70 @@ void main() {
     await t.tap(find.widgetWithText(TextButton, 'اتصال'));
     await waitFor(t, () => s.status == SessStatus.connected);
     expect(secure['pw_h'], sshPass);
+    await closeAll(t);
+  }, skip: skip);
+
+  Future<TermSession> quick(WidgetTester t, String pw) async {
+    await t.tap(find.byKey(const ValueKey('quick-connect')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const ValueKey('qc-host')), sshHost);
+    await t.enterText(find.byKey(const ValueKey('qc-port')), '$sshPort');
+    await t.enterText(find.byKey(const ValueKey('qc-user')), sshUser);
+    await t.enterText(find.byKey(const ValueKey('qc-password')), pw);
+    await t.tap(find.byKey(const ValueKey('qc-connect')));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500)); // form closes, terminal route opens
+    final s = Sessions.i.list.last;
+    await waitFor(t, () => find.text('اعتماد و اتصال').evaluate().isNotEmpty, reason: 'host key prompt');
+    await t.tap(find.text('اعتماد و اتصال'));
+    return s;
+  }
+
+  testWidgets('quick connect: logs in unsaved, Save keeps host + password', (t) async {
+    await setSize(t, phone);
+    await launch(t);
+    final s = await quick(t, sshPass);
+    await waitFor(t, () => s.status == SessStatus.connected, reason: s.error);
+    await waitFor(t, () => find.text('این سرور ذخیره شود؟').evaluate().isNotEmpty, reason: 'save prompt');
+    await t.pump(const Duration(milliseconds: 500)); // snack bar slides in
+    expect(Store.i.hosts, isEmpty);
+    expect(secure.keys.where((k) => k.startsWith('pw_')), isEmpty);
+    await t.tap(find.byKey(const ValueKey('save-server-yes')).last);
+    await settleIo(t, 300);
+    final h = Store.i.hosts.single;
+    expect(h.label, sshHost);
+    expect(secure['pw_${h.id}'], sshPass);
+    await t.pump(const Duration(seconds: 3));
+    await t.tap(find.byType(BackButton).last);
+    await t.pumpAndSettle();
+    await closeAll(t);
+    // the saved server connects from the list without asking anything
+    final s2 = await openFromList(t, sshHost, expectPrompt: false);
+    expect(s2.status, SessStatus.connected, reason: s2.error);
+    expect(s2.transient, isFalse);
+    await closeAll(t);
+  }, skip: skip);
+
+  testWidgets('quick connect: wrong password asks again; remember off saves no password', (t) async {
+    await setSize(t, phone);
+    await launch(t);
+    final s = await quick(t, 'wrong-pw');
+    await waitFor(t, () => find.byKey(const ValueKey('pw-field')).evaluate().isNotEmpty,
+        seconds: 25, reason: 'password asked again');
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('رمز اشتباه بود، دوباره وارد کنید'), findsOneWidget);
+    await t.enterText(find.byKey(const ValueKey('pw-field')), sshPass);
+    await t.tap(find.text('رمز را به خاطر بسپار'));
+    await t.pump();
+    await t.tap(find.widgetWithText(TextButton, 'اتصال'));
+    await waitFor(t, () => s.status == SessStatus.connected, reason: s.error);
+    expect(secure.keys.where((k) => k.startsWith('pw_')), isEmpty, reason: 'transient: nothing remembered');
+    await waitFor(t, () => find.text('این سرور ذخیره شود؟').evaluate().isNotEmpty, reason: 'save prompt');
+    await t.pump(const Duration(milliseconds: 500)); // snack bar slides in
+    await t.tap(find.byKey(const ValueKey('save-server-yes')).last);
+    await settleIo(t, 300);
+    expect(secure['pw_${Store.i.hosts.single.id}'], '');
+    await t.pump(const Duration(seconds: 3));
     await closeAll(t);
   }, skip: skip);
 
@@ -401,7 +466,7 @@ void main() {
   testWidgets('host added with a pasted SSH key connects', (t) async {
     await setSize(t, phone);
     await launch(t);
-    await t.tap(find.byType(FloatingActionButton).first);
+    await t.tap(find.byKey(const ValueKey('fab-add-host')));
     await t.pumpAndSettle();
     await t.enterText(fieldLabeled('نام (اختیاری)'), 'کلیدی');
     await t.enterText(fieldLabeled('آدرس سرور'), sshHost);

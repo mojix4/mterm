@@ -10,6 +10,7 @@ import '../session.dart';
 import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
+import 'quick_connect.dart';
 
 const Map<String, TerminalKey> _specialKeys = {
   'esc': TerminalKey.escape,
@@ -91,10 +92,19 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void initState() {
     super.initState();
     if (Store.i.settings.wakelock) WakelockPlus.enable();
+    s.addListener(_offerSave);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerSave());
+  }
+
+  /// Quick connect: once logged in, ask (without blocking) whether to keep the server.
+  void _offerSave() {
+    if (!mounted || !s.transient || s.saveOffered || s.status != SessStatus.connected) return;
+    offerSaveHost(context, s);
   }
 
   @override
   void dispose() {
+    s.removeListener(_offerSave);
     WakelockPlus.disable();
     controller.dispose();
     focus.dispose();
@@ -313,12 +323,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       _setFont(fontSize - 1);
                     case 'reconnect':
                       _reconnect();
+                    case 'saveServer':
+                      saveQuickHost(s);
                     case 'close':
                       Sessions.i.close(s);
                       Navigator.of(context).pop();
                   }
                 },
                 itemBuilder: (_) => [
+                  if (s.transient) PopupMenuItem(value: 'saveServer', child: Text(l['saveServer'])),
                   PopupMenuItem(value: 'copy', child: Text(l['copySelection'])),
                   PopupMenuItem(value: 'paste', child: Text(l['paste'])),
                   PopupMenuItem(value: 'big', child: Text(l['fontBigger'])),

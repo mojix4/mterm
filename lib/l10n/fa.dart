@@ -157,4 +157,13 @@ const Map<String, String> fa = {
   'errRefused': 'اتصال رد شد؛ پورت SSH بسته است',
   'errNotFound': 'آدرس سرور پیدا نشد',
   'errUnreachable': 'سرور در دسترس نیست: {msg}',
+
+  // quick connect
+  'quickConnect': 'اتصال سریع',
+  'quickConnectHint': 'بدون ذخیره کردن، مستقیم به سرور وصل شوید.',
+  'saveServerQ': 'این سرور ذخیره شود؟',
+  'saveServerBody': 'در فهرست سرورها می\u200cماند تا دفعهٔ بعد با یک لمس وصل شوید.',
+  'notNow': 'فعلاً نه',
+  'saveServer': 'ذخیرهٔ این سرور',
+  'serverSaved': 'سرور ذخیره شد',
 };

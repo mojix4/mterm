@@ -156,4 +156,13 @@ const Map<String, String> ar = {
   'errRefused': 'تم رفض الاتصال؛ منفذ SSH مغلق',
   'errNotFound': 'لم يُعثر على عنوان الخادم',
   'errUnreachable': 'لا يمكن الوصول إلى الخادم: {msg}',
+
+  // quick connect
+  'quickConnect': 'اتصال سريع',
+  'quickConnectHint': 'اتصل بخادم دون حفظه أولاً.',
+  'saveServerQ': 'حفظ هذا الخادم؟',
+  'saveServerBody': 'سيبقى في قائمة الخوادم لتتصل بلمسة واحدة في المرة القادمة.',
+  'notNow': 'ليس الآن',
+  'saveServer': 'حفظ هذا الخادم',
+  'serverSaved': 'تم حفظ الخادم',
 };

@@ -182,4 +182,13 @@ const Map<String, String> en = {
   'errRefused': 'Connection refused; the SSH port is closed',
   'errNotFound': 'Server address not found',
   'errUnreachable': 'Server unreachable: {msg}',
+
+  // quick connect
+  'quickConnect': 'Quick connect',
+  'quickConnectHint': 'Connect to a server without saving it first.',
+  'saveServerQ': 'Save this server?',
+  'saveServerBody': 'Keep it in your servers list so next time is one tap.',
+  'notNow': 'Not now',
+  'saveServer': 'Save this server',
+  'serverSaved': 'Server saved',
 };

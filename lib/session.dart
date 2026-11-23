@@ -28,7 +28,12 @@ typedef PasswordPrompt = Future<PasswordAnswer?> Function(Host host, {bool wrong
 enum SessStatus { connecting, connected, closed, failed }
 
 class TermSession extends ChangeNotifier {
-  TermSession(this.host) {
+  /// [transient] sessions come from Quick connect: their host is not in the
+  /// store, nothing is read from or written to secure storage for it until the
+  /// user saves the server ([saveHost]). [password] is the one typed in the
+  /// quick connect form.
+  TermSession(this.host, {bool transient = false, String? password}) : _transient = transient {
+    if (password != null && password.isNotEmpty) _typedPw = password;
     terminal = Terminal(maxLines: Store.i.settings.scrollback);
     terminal.onOutput = _onOutput;
     terminal.onResize = (w, h, pw, ph) => _shell?.resizeTerminal(w, h, pw, ph);
@@ -43,6 +48,13 @@ class TermSession extends ChangeNotifier {
 
   final Host host;
   late final Terminal terminal;
+  bool _transient;
+
+  /// True while this is an unsaved Quick connect session.
+  bool get transient => _transient;
+
+  /// Set once the "Save this server?" prompt was shown for this session.
+  bool saveOffered = false;
   SSHClient? _client;
   SSHSession? _shell;
   SessStatus status = SessStatus.connecting;
@@ -107,7 +119,7 @@ class TermSession extends ChangeNotifier {
     }
 
     try {
-      final sec = await Store.i.secret(host.id);
+      final sec = _transient ? HostSecret() : await Store.i.secret(host.id);
       pw = _typedPw ?? sec.password;
       List<SSHKeyPair>? ids;
       if (host.auth == 'key' && sec.privateKey.trim().isNotEmpty) {
@@ -139,7 +151,7 @@ class TermSession extends ChangeNotifier {
       await client.authenticated;
       // Logged in: keep a password the user typed if they asked us to, replacing
       // a wrong or missing saved one so the next connect is automatic.
-      if (_typedPw != null && _rememberPw && _typedPw != sec.password) {
+      if (!_transient && _typedPw != null && _rememberPw && _typedPw != sec.password) {
         await Store.i.savePassword(host.id, _typedPw!);
       }
       final shell = await client.shell(
@@ -154,7 +166,7 @@ class TermSession extends ChangeNotifier {
       _shell = shell;
       status = SessStatus.connected;
       notifyListeners();
-      Store.i.touchHost(host);
+      if (!_transient) Store.i.touchHost(host);
       const dec = Utf8Decoder(allowMalformed: true);
       void out(String d) {
         if (!stale()) terminal.write(d);
@@ -190,6 +202,27 @@ class TermSession extends ChangeNotifier {
       terminal.write('\x1b[31m✕ Connection failed\x1b[0m \x1b[90m($e)\x1b[0m\r\n');
       notifyListeners();
     }
+  }
+
+  /// Stores a Quick connect host like one added by hand (label = its address)
+  /// and, when the user typed it in the form or ticked "Remember password",
+  /// its password under the usual pw_<id> key. Afterwards this is a normal
+  /// session of a saved host.
+  Future<void> saveHost() async {
+    if (!_transient) return;
+    if (host.label.trim().isEmpty) host.label = host.host;
+    host.lastUsed = DateTime.now().toIso8601String();
+    final pw = _rememberPw ? (_typedPw ?? '') : '';
+    _transient = false;
+    await Store.i.upsertHost(host, HostSecret(password: pw));
+    notifyListeners();
+  }
+
+  /// Test hook: puts the session in [st] as if the connection got there.
+  @visibleForTesting
+  void debugSetStatus(SessStatus st) {
+    status = st;
+    notifyListeners();
   }
 
   /// [error] in the language of [s] (falls back to the stored text).
@@ -345,8 +378,8 @@ class Sessions extends ChangeNotifier {
   static final Sessions i = Sessions._();
   final List<TermSession> list = [];
 
-  TermSession open(Host h) {
-    final s = TermSession(h);
+  TermSession open(Host h, {bool transient = false, String? password}) {
+    final s = TermSession(h, transient: transient, password: password);
     s.addListener(notifyListeners);
     list.add(s);
     notifyListeners();
