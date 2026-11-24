@@ -96,3 +96,6 @@ jobs:
           name: MTerm v1.0.${{ github.run_number }}
           files: dist/*
           make_latest: true
+          repository: mojix4/mterm-releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          target_commitish: main
