@@ -22,3 +22,13 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+// file_picker 11 skips the Kotlin plugin on AGP 9 (it expects built-in Kotlin),
+// but this project keeps android.builtInKotlin=false, so apply it here.
+subprojects {
+    if (name == "file_picker") {
+        plugins.withId("com.android.library") {
+            apply(plugin = "org.jetbrains.kotlin.android")
+        }
+    }
+}
