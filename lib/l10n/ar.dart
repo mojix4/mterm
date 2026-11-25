@@ -165,4 +165,13 @@ const Map<String, String> ar = {
   'notNow': 'ليس الآن',
   'saveServer': 'حفظ هذا الخادم',
   'serverSaved': 'تم حفظ الخادم',
+  'checkUpdate': 'التحقق من التحديثات',
+  'checkUpdateHint': 'احصل على أحدث إصدار من صفحة التنزيل',
+  'checkingUpdate': 'جارٍ التحقق من التحديثات…',
+  'updateFailed': 'تعذّر الوصول إلى خادم التحديث. تحقّق من الإنترنت أو VPN، أو افتح صفحة التنزيل.',
+  'openDownloadPage': 'فتح صفحة التنزيل',
+  'upToDate': 'لديك أحدث إصدار (v{v})',
+  'updateAvailable': 'الإصدار v{v} متاح',
+  'updateBody': 'إصدارك الحالي v{cur}. نزّل الإصدار الجديد وثبّته؛ ستبقى خوادمك وكلمات المرور.',
+  'download': 'تنزيل',
 };

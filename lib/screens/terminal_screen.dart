@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -104,6 +106,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   @override
   void dispose() {
+    _holdTimer?.cancel();
     s.removeListener(_offerSave);
     WakelockPlus.disable();
     controller.dispose();
@@ -120,8 +123,21 @@ class _TerminalScreenState extends State<TerminalScreen> {
     }
   }
 
+  // long press -> Copy / Paste menu (mobile)
+  Timer? _holdTimer;
+  Offset? _holdAt;
+  bool _held = false;
+
   void _onDown(PointerDownEvent e) {
     _pointers[e.pointer] = e.position;
+    _holdTimer?.cancel();
+    _held = false;
+    if (_pointers.length == 1 && e.kind == PointerDeviceKind.touch) {
+      _holdAt = e.position;
+      _holdTimer = Timer(const Duration(milliseconds: 450), () => _held = true);
+    } else {
+      _holdAt = null;
+    }
     if (_pointers.length == 2) {
       _pinchStartDist = _dist();
       _pinchStartFont = fontSize;
@@ -131,6 +147,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void _onMove(PointerMoveEvent e) {
     if (!_pointers.containsKey(e.pointer)) return;
     _pointers[e.pointer] = e.position;
+    final h = _holdAt;
+    if (!_held && h != null && (e.position - h).distance > 12) {
+      _holdTimer?.cancel();
+      _holdAt = null;
+    }
     final d0 = _pinchStartDist;
     if (_pointers.length == 2 && d0 != null && d0 > 0) {
       final f = (_pinchStartFont * _dist() / d0).roundToDouble();
@@ -140,6 +161,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _onUp(PointerEvent e) {
     _pointers.remove(e.pointer);
+    _holdTimer?.cancel();
+    if (_held && _holdAt != null && e is PointerUpEvent && _pointers.isEmpty) {
+      _showEditMenu(e.position);
+    }
+    _held = false;
+    _holdAt = null;
     if (_pinchStartDist != null && _pointers.length < 2) {
       _pinchStartDist = null;
       _setFont(fontSize);
@@ -165,6 +192,26 @@ class _TerminalScreenState extends State<TerminalScreen> {
       s.text(k);
     }
     focus.requestFocus();
+  }
+
+  Future<void> _showEditMenu(Offset at) async {
+    final l = S.of(context);
+    final hasSel = controller.selection != null;
+    final size = MediaQuery.of(context).size;
+    final v = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(at.dx, at.dy - 56, size.width - at.dx, size.height - at.dy),
+      items: [
+        if (hasSel) PopupMenuItem(value: 'copy', child: Text(l['copySelection'])),
+        PopupMenuItem(value: 'paste', child: Text(l['paste'])),
+      ],
+    );
+    if (v == 'copy') _copy();
+    if (v == 'paste') {
+      controller.clearSelection();
+      await _paste();
+      focus.requestFocus();
+    }
   }
 
   Future<void> _paste() async {

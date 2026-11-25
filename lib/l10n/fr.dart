@@ -169,4 +169,13 @@ const Map<String, String> fr = {
   'notNow': 'Pas maintenant',
   'saveServer': 'Enregistrer ce serveur',
   'serverSaved': 'Serveur enregistré',
+  'checkUpdate': 'Rechercher des mises à jour',
+  'checkUpdateHint': 'Obtenir la dernière version depuis la page de téléchargement',
+  'checkingUpdate': 'Recherche de mises à jour…',
+  'updateFailed': 'Serveur de mise à jour injoignable. Vérifiez Internet ou le VPN, ou ouvrez la page de téléchargement.',
+  'openDownloadPage': 'Ouvrir la page de téléchargement',
+  'upToDate': 'Vous avez la dernière version (v{v})',
+  'updateAvailable': 'La version v{v} est disponible',
+  'updateBody': 'Vous avez la v{cur}. Téléchargez et installez la nouvelle version ; vos serveurs et mots de passe sont conservés.',
+  'download': 'Télécharger',
 };

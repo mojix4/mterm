@@ -166,4 +166,13 @@ const Map<String, String> es = {
   'notNow': 'Ahora no',
   'saveServer': 'Guardar este servidor',
   'serverSaved': 'Servidor guardado',
+  'checkUpdate': 'Buscar actualizaciones',
+  'checkUpdateHint': 'Obtén la última versión desde la página de descarga',
+  'checkingUpdate': 'Buscando actualizaciones…',
+  'updateFailed': 'No se pudo contactar el servidor de actualizaciones. Revisa Internet o la VPN, o abre la página de descarga.',
+  'openDownloadPage': 'Abrir página de descarga',
+  'upToDate': 'Tienes la última versión (v{v})',
+  'updateAvailable': 'La versión v{v} está disponible',
+  'updateBody': 'Tienes la v{cur}. Descarga e instala la nueva versión; tus servidores y contraseñas se conservan.',
+  'download': 'Descargar',
 };

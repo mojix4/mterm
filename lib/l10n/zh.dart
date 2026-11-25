@@ -164,4 +164,13 @@ const Map<String, String> zh = {
   'notNow': '以后再说',
   'saveServer': '保存此服务器',
   'serverSaved': '服务器已保存',
+  'checkUpdate': '检查更新',
+  'checkUpdateHint': '从下载页获取最新版本',
+  'checkingUpdate': '正在检查更新…',
+  'updateFailed': '无法连接更新服务器。请检查网络或 VPN，或打开下载页。',
+  'openDownloadPage': '打开下载页',
+  'upToDate': '已是最新版本 (v{v})',
+  'updateAvailable': '有新版本 v{v}',
+  'updateBody': '当前版本 v{cur}。下载并安装新版本，服务器和密码会保留。',
+  'download': '下载',
 };

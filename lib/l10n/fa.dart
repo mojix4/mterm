@@ -166,4 +166,13 @@ const Map<String, String> fa = {
   'notNow': 'فعلاً نه',
   'saveServer': 'ذخیرهٔ این سرور',
   'serverSaved': 'سرور ذخیره شد',
+  'checkUpdate': 'بررسی به\u200cروزرسانی',
+  'checkUpdateHint': 'دریافت آخرین نسخه از صفحهٔ دانلود',
+  'checkingUpdate': 'در حال بررسی به\u200cروزرسانی…',
+  'updateFailed': 'به سرور به\u200cروزرسانی وصل نشد. اینترنت یا VPN را بررسی کنید، یا صفحهٔ دانلود را باز کنید.',
+  'openDownloadPage': 'باز کردن صفحهٔ دانلود',
+  'upToDate': 'آخرین نسخه را دارید (v{v})',
+  'updateAvailable': 'نسخهٔ v{v} آماده است',
+  'updateBody': 'نسخهٔ فعلی شما v{cur} است. نسخهٔ جدید را دانلود و نصب کنید؛ سرورها و رمزها حفظ می\u200cشوند.',
+  'download': 'دانلود',
 };

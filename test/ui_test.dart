@@ -22,7 +22,12 @@ final _vScroll = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirectio
 /// Scrolls the top-most vertical list until [f] is built and visible.
 Future<void> reveal(WidgetTester t, Finder f) async {
   if (f.evaluate().isEmpty) {
-    await t.scrollUntilVisible(f, 150, scrollable: _vScroll.last);
+    // lazy lists drop off-screen rows, so the target may be below or above
+    try {
+      await t.scrollUntilVisible(f, 150, scrollable: _vScroll.last);
+    } catch (_) {
+      await t.scrollUntilVisible(f, -150, scrollable: _vScroll.last);
+    }
   }
   await t.ensureVisible(f.first);
   await t.pumpAndSettle();

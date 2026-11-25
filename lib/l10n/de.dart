@@ -167,4 +167,13 @@ const Map<String, String> de = {
   'notNow': 'Jetzt nicht',
   'saveServer': 'Diesen Server speichern',
   'serverSaved': 'Server gespeichert',
+  'checkUpdate': 'Nach Updates suchen',
+  'checkUpdateHint': 'Neueste Version von der Downloadseite holen',
+  'checkingUpdate': 'Suche nach Updates…',
+  'updateFailed': 'Update-Server nicht erreichbar. Prüfe Internet oder VPN oder öffne die Downloadseite.',
+  'openDownloadPage': 'Downloadseite öffnen',
+  'upToDate': 'Du hast die neueste Version (v{v})',
+  'updateAvailable': 'Version v{v} ist verfügbar',
+  'updateBody': 'Du hast v{cur}. Lade die neue Version herunter und installiere sie; Server und Passwörter bleiben erhalten.',
+  'download': 'Herunterladen',
 };

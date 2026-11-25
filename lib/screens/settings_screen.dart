@@ -1,15 +1,16 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n.dart';
 import '../store.dart';
 import '../themes.dart';
+import '../updater.dart';
 import 'common.dart';
 import 'lock_screen.dart';
 import 'terminal_screen.dart';
 
-const appVersion = '1.0.0';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -181,6 +182,13 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('MTerm'),
                 subtitle: Text(s['appTagline'], style: TextStyle(color: p.muted)),
                 trailing: Text('v$appVersion', style: TextStyle(color: p.muted)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.system_update),
+                title: Text(s['checkUpdate']),
+                subtitle: Text(s['checkUpdateHint'], style: TextStyle(color: p.muted)),
+                trailing: Icon(Icons.chevron_right, color: p.muted),
+                onTap: () => checkForUpdate(context),
               ),
               ListTile(
                 title: Text(s['licenses']),
@@ -357,4 +365,37 @@ class KeysEditor extends StatelessWidget {
       },
     );
   }
+}
+
+Future<void> checkForUpdate(BuildContext context) async {
+  final s = S.of(context);
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      content: Row(children: [
+        const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+        const SizedBox(width: 16),
+        Expanded(child: Text(s['checkingUpdate'])),
+      ]),
+    ),
+  );
+  UpdateInfo? info;
+  try {
+    info = await fetchLatest();
+  } catch (_) {}
+  if (!context.mounted) return;
+  Navigator.of(context).pop();
+  if (info == null) {
+    final open = await confirm(context, s['checkUpdate'], s['updateFailed'], ok: s['openDownloadPage']);
+    if (open) launchUrl(Uri.parse(releasesPage), mode: LaunchMode.externalApplication);
+    return;
+  }
+  if (compareVersions(info.version, appVersion) <= 0) {
+    toast(context, s.f('upToDate', {'v': appVersion}));
+    return;
+  }
+  final go = await confirm(context, s.f('updateAvailable', {'v': info.version}),
+      s.f('updateBody', {'cur': appVersion}), ok: s['download']);
+  if (go) launchUrl(Uri.parse(info.downloadUrl), mode: LaunchMode.externalApplication);
 }

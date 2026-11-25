@@ -191,4 +191,13 @@ const Map<String, String> en = {
   'notNow': 'Not now',
   'saveServer': 'Save this server',
   'serverSaved': 'Server saved',
+  'checkUpdate': 'Check for updates',
+  'checkUpdateHint': 'Get the latest version from the download page',
+  'checkingUpdate': 'Checking for updates…',
+  'updateFailed': "Couldn't reach the update server. Check your internet or VPN, or open the download page.",
+  'openDownloadPage': 'Open download page',
+  'upToDate': 'You have the latest version (v{v})',
+  'updateAvailable': 'Version v{v} is available',
+  'updateBody': 'You have v{cur}. Download and install the new version; your servers and passwords stay.',
+  'download': 'Download',
 };

@@ -166,4 +166,13 @@ const Map<String, String> tr = {
   'notNow': 'Şimdi değil',
   'saveServer': 'Bu sunucuyu kaydet',
   'serverSaved': 'Sunucu kaydedildi',
+  'checkUpdate': 'Güncellemeleri denetle',
+  'checkUpdateHint': 'En son sürümü indirme sayfasından alın',
+  'checkingUpdate': 'Güncellemeler denetleniyor…',
+  'updateFailed': "Güncelleme sunucusuna ulaşılamadı. İnternetinizi veya VPN'i kontrol edin ya da indirme sayfasını açın.",
+  'openDownloadPage': 'İndirme sayfasını aç',
+  'upToDate': 'En son sürümü kullanıyorsunuz (v{v})',
+  'updateAvailable': 'v{v} sürümü mevcut',
+  'updateBody': 'Sizdeki sürüm v{cur}. Yeni sürümü indirip kurun; sunucularınız ve parolalarınız korunur.',
+  'download': 'İndir',
 };
