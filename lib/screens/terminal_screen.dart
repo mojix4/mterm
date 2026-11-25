@@ -13,6 +13,7 @@ import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
 import 'quick_connect.dart';
+import '../suggest.dart';
 
 const Map<String, TerminalKey> _specialKeys = {
   'esc': TerminalKey.escape,
@@ -303,21 +304,91 @@ class _TerminalScreenState extends State<TerminalScreen> {
     );
   }
 
-  List<String> _suggestions() {
-    final q = s.line;
-    if (q == null || q.isEmpty) return const [];
-    final pool = [...s.typed, ...Store.i.snippets.map((e) => e.cmd)];
-    final out = <String>[];
-    for (final c in pool) {
-      if (c != q && c.startsWith(q) && !out.contains(c)) out.add(c);
-      if (out.length >= 8) return out;
-    }
-    final ql = q.toLowerCase();
-    for (final c in pool) {
-      if (c != q && c.toLowerCase().contains(ql) && !out.contains(c)) out.add(c);
-      if (out.length >= 8) break;
-    }
-    return out;
+  List<String> _suggestions() => s.terminal.isUsingAltBuffer
+      ? const []
+      : suggestCommands(s.line, [...s.typed, ...Store.i.history], Store.i.snippets.map((e) => e.cmd));
+
+  // ---- Termius-style prediction popup under the cursor
+  final _tvKey = GlobalKey<TerminalViewState>();
+  final _stackKey = GlobalKey();
+  Rect? _cursor;
+
+  void _trackCursor() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final tv = _tvKey.currentState;
+      final box = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+      if (tv == null || box == null || !box.hasSize) return;
+      Rect r;
+      try {
+        final g = tv.globalCursorRect;
+        r = box.globalToLocal(g.topLeft) & g.size;
+      } catch (_) {
+        return;
+      }
+      if (r != _cursor) setState(() => _cursor = r);
+    });
+  }
+
+  Widget _predictions(List<String> items, BoxConstraints c, bool light) {
+    final r = _cursor;
+    if (r == null) return const SizedBox.shrink();
+    const itemH = 40.0;
+    final h = items.length * itemH;
+    const w = 240.0;
+    final maxW = math.min(w, c.maxWidth - 8);
+    final double left = r.left.clamp(4.0, math.max(4.0, c.maxWidth - maxW - 4)).toDouble();
+    final below = r.bottom + 4;
+    final top = below + h <= c.maxHeight ? below : math.max(0.0, r.top - h - 4);
+    final q = s.line ?? '';
+    final bg = light ? const Color(0xFFFFFFFF) : const Color(0xFFE6E9EF);
+    const fg = Color(0xFF1B1F27);
+    return Positioned(
+      left: left,
+      top: top,
+      width: maxW,
+      child: Material(
+        key: const ValueKey('predictions'),
+        color: bg,
+        elevation: 6,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0x33000000))),
+        clipBehavior: Clip.antiAlias,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const Divider(height: 1, thickness: 1, color: Color(0x22000000)),
+            InkWell(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                s.run(items[i], enter: false);
+                focus.requestFocus();
+              },
+              child: SizedBox(
+                height: itemH - (i > 0 ? 1 : 0),
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text.rich(
+                      items[i].startsWith(q)
+                          ? TextSpan(children: [
+                              TextSpan(text: q, style: const TextStyle(fontWeight: FontWeight.w800)),
+                              TextSpan(text: items[i].substring(q.length)),
+                            ])
+                          : TextSpan(text: items[i]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15, color: fg),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
   }
 
   @override
@@ -333,6 +404,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
         final keyBg = light ? Colors.white : Color.lerp(theme.background, Colors.white, 0.13)!;
         final fg = light ? const Color(0xFF24292F) : const Color(0xFFE6EBF7);
         final sugg = _suggestions();
+        if (sugg.isNotEmpty) _trackCursor();
         return Scaffold(
           backgroundColor: theme.background,
           resizeToAvoidBottomInset: true,
@@ -401,9 +473,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
                     onPointerMove: _onMove,
                     onPointerUp: _onUp,
                     onPointerCancel: _onUp,
-                    child: Stack(children: [
+                    child: LayoutBuilder(builder: (context, box) => Stack(key: _stackKey, children: [
                       TerminalView(
                         s.terminal,
+                        key: _tvKey,
                         controller: controller,
                         focusNode: focus,
                         autofocus: true,
@@ -421,52 +494,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
                           fontFamilyFallback: const ['monospace', 'Vazirmatn', 'Noto Color Emoji'],
                         ),
                       ),
+                      if (sugg.isNotEmpty && s.status == SessStatus.connected) _predictions(sugg, box, light),
                       if (s.status == SessStatus.failed || s.status == SessStatus.closed)
                         Positioned(left: 12, right: 12, bottom: 12, child: _reconnectBanner()),
-                    ]),
+                    ])),
                   ),
                 ),
               ),
-              if (sugg.isNotEmpty)
-                Container(
-                  color: barBg,
-                  height: 40,
-                  child: Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-                      children: [
-                        for (final c in sugg)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Material(
-                              color: keyBg,
-                              borderRadius: BorderRadius.circular(8),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(8),
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  s.run(c, enter: false);
-                                  focus.requestFocus();
-                                },
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    child: Text(c,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 13, color: fg)),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
               Container(
                 color: barBg,
                 height: 50,

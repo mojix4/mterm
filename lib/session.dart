@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
@@ -305,7 +306,7 @@ class TermSession extends ChangeNotifier {
   void run(String cmd, {bool enter = true}) {
     _send('\x15$cmd${enter ? '\r' : ''}');
     if (enter) {
-      _remember(cmd);
+      _remember(cmd, keep: true);
       line = '';
     } else {
       line = cmd;
@@ -313,18 +314,34 @@ class TermSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _remember(String cmd) {
+  void _remember(String cmd, {bool keep = false}) {
     final c = cmd.trim();
     if (c.isEmpty) return;
+    if (keep) Store.i.addHistory(c);
     typed.remove(c);
     typed.insert(0, c);
     if (typed.length > 300) typed.removeLast();
   }
 
+  bool _echoed(String l) {
+    final t = l.trim();
+    if (t.isEmpty) return false;
+    final b = terminal.buffer;
+    final y = b.absoluteCursorY;
+    final sb = StringBuffer();
+    for (var i = math.max(0, y - 4); i <= y && i < b.lines.length; i++) {
+      sb.write(b.lines[i].getText());
+    }
+    String bare(String x) => x.replaceAll(RegExp(r'\s'), '');
+    return bare(sb.toString()).contains(bare(t));
+  }
+
   void _track(String d) {
     final before = line;
     if (d == '\r') {
-      if (line != null) _remember(line!);
+      // Only keep lines the server echoed back, so passwords typed at a
+      // prompt (no echo) never land in the saved history.
+      if (line != null) _remember(line!, keep: _echoed(line!));
       line = '';
     } else if (d == '\x7f' || d == '\b') {
       if (line != null && line!.isNotEmpty) line = line!.substring(0, line!.length - 1);

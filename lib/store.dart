@@ -85,6 +85,9 @@ class Store extends ChangeNotifier {
   Map<String, String> knownHosts = {};
   final settings = AppSettings();
 
+  /// Commands the user ran (newest first), kept across sessions for suggestions.
+  List<String> history = [];
+
   Future<void> init() async {
     _p = await SharedPreferences.getInstance();
     // Same keys since 1.0 ('settings', 'hosts', 'snippets', 'known_hosts' and
@@ -95,6 +98,22 @@ class Store extends ChangeNotifier {
     // Untouched defaults are not persisted, so they come up in the current language.
     snippets = sn == null ? _defaultSnippets() : _list('snippets').map(Snippet.fromJson).toList();
     knownHosts = Map<String, String>.from(jsonDecode(_p.getString('known_hosts') ?? '{}'));
+    history = _p.getStringList('cmd_history') ?? [];
+  }
+
+  void addHistory(String cmd) {
+    final c = cmd.trim();
+    if (c.isEmpty || c.length > 500) return;
+    history.remove(c);
+    history.insert(0, c);
+    if (history.length > 500) history.removeRange(500, history.length);
+    _p.setStringList('cmd_history', history);
+  }
+
+  Future<void> clearHistory() async {
+    history = [];
+    await _p.remove('cmd_history');
+    notifyListeners();
   }
 
   List<Map<String, dynamic>> _list(String k) =>

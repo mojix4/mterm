@@ -122,6 +122,8 @@ void main() {
     // suggestion bar offers history; tapping it fills the line, enter runs it
     await type(t, 'ech');
     expect(s.line, 'ech');
+    await t.pump(); // the popup is placed under the cursor on the next frame
+    expect(find.byKey(const ValueKey('predictions')), findsOneWidget);
     final chip = find.descendant(of: find.byType(InkWell), matching: find.text('echo hello_mterm'));
     expect(chip, findsOneWidget);
     await t.tap(chip);
@@ -568,7 +570,7 @@ void main() {
       await waitLine(t, s, 'hello_mterm');
       await typeLine(t, r"printf '\e[32mok\e[0m \e[1;34mblue\e[0m \e[33mwarn\e[0m\n'; echo 'سلام دنیا'; seq 1 3");
       await waitLine(t, s, '3');
-      await type(t, 'ech');
+      await type(t, 'syst');
       await settleIo(t, 300);
       await shot(t, '5_terminal');
 
