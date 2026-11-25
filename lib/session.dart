@@ -8,23 +8,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
 
+import 'forwarding.dart';
+import 'keys.dart';
 import 'l10n.dart';
 import 'models.dart';
+import 'session_log.dart';
+import 'ssh_connect.dart';
 import 'store.dart';
 
-/// Asks the user whether to trust a server key. [old] is set when the key changed.
-typedef HostKeyPrompt = Future<bool> Function(String type, String fingerprint, String? old);
-
-/// What the user typed in the password dialog.
-class PasswordAnswer {
-  const PasswordAnswer(this.password, {this.remember = true});
-  final String password;
-  final bool remember;
-}
-
-/// Asks the user for [host]'s password. [wrong] is true after a failed login.
-/// Returns null when the user cancels.
-typedef PasswordPrompt = Future<PasswordAnswer?> Function(Host host, {bool wrong});
+export 'ssh_connect.dart' show HostKeyPrompt, PasswordAnswer, PasswordPrompt;
 
 enum SessStatus { connecting, connected, closed, failed }
 
@@ -56,8 +48,16 @@ class TermSession extends ChangeNotifier {
 
   /// Set once the "Save this server?" prompt was shown for this session.
   bool saveOffered = false;
-  SSHClient? _client;
+  SshLink? _link;
+  SSHClient? get _client => _link?.client;
   SSHSession? _shell;
+
+  /// Port forwarding rules running on this connection.
+  final forwards = ForwardManager();
+  SessionLog? _log;
+
+  /// Log file of the current connection (null when logging is off).
+  SessionLog? get log => _log;
   SessStatus status = SessStatus.connecting;
   /// Readable reason for the last failure, in the language that was active then.
   String? error;
@@ -122,34 +122,24 @@ class TermSession extends ChangeNotifier {
     try {
       final sec = _transient ? HostSecret() : await Store.i.secret(host.id);
       pw = _typedPw ?? sec.password;
-      List<SSHKeyPair>? ids;
-      if (host.auth == 'key' && sec.privateKey.trim().isNotEmpty) {
-        ids = SSHKeyPair.fromPem(sec.privateKey.trim(), sec.passphrase.isEmpty ? null : sec.passphrase);
-      }
-      final socket = await SSHSocket.connect(host.host, host.port, timeout: const Duration(seconds: 12));
-      final ka = Store.i.settings.keepAlive;
-      final client = SSHClient(
-        socket,
-        username: host.user,
-        identities: ids,
-        keepAliveInterval: ka > 0 ? Duration(seconds: ka) : null,
-        onPasswordRequest: password,
-        onUserInfoRequest: (req) async {
-          final p = await password();
-          return p == null ? null : req.prompts.map((_) => p).toList();
-        },
-        onVerifyHostKey: (type, fp) async {
-          final hex = fp.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':');
-          final known = Store.i.knownFingerprint(host.host, host.port);
-          if (known == hex) return true;
-          final ok = await prompt(type, hex, known);
-          if (ok) await Store.i.trust(host.host, host.port, hex);
-          return ok;
+      final link = await openSsh(
+        host,
+        secret: sec,
+        hostKeyPrompt: prompt,
+        password: password,
+        jumpPasswordPrompt: passwordPrompt,
+        keepAlive: Store.i.settings.keepAlive,
+        onLink: (l) {
+          if (stale()) {
+            l.close();
+          } else {
+            _link = l;
+          }
         },
       );
-      if (stale()) return client.close();
-      _client = client;
-      await client.authenticated;
+      if (stale()) return link.close();
+      _link = link;
+      final client = link.client;
       // Logged in: keep a password the user typed if they asked us to, replacing
       // a wrong or missing saved one so the next connect is automatic.
       if (!_transient && _typedPw != null && _rememberPw && _typedPw != sec.password) {
@@ -161,26 +151,47 @@ class TermSession extends ChangeNotifier {
       if (stale()) {
         // closed or reconnected while we were logging in
         shell.close();
-        client.close();
+        link.close();
         return;
       }
       _shell = shell;
       status = SessStatus.connected;
       notifyListeners();
       if (!_transient) Store.i.touchHost(host);
+      if (Store.i.settings.logSessions) {
+        final lg = await SessionLog.open(host.host);
+        if (stale()) {
+          lg?.close();
+        } else {
+          _log = lg;
+        }
+      }
       const dec = Utf8Decoder(allowMalformed: true);
+      final firstOutput = Completer<void>();
       void out(String d) {
-        if (!stale()) terminal.write(d);
+        if (stale()) return;
+        terminal.write(d);
+        _log?.write(d);
+        if (!firstOutput.isCompleted) firstOutput.complete();
       }
 
       shell.stdout.cast<List<int>>().transform(dec).listen(out, onError: (_) {});
       shell.stderr.cast<List<int>>().transform(dec).listen(out, onError: (_) {});
       shell.done.whenComplete(() => _closed(gen)).ignore();
-      client.done.whenComplete(() => _closed(gen)).ignore();
+      link.done.whenComplete(() => _closed(gen)).ignore();
+      if (host.forwards.isNotEmpty) forwards.startAuto(client, host.forwards);
+      final startup = host.startupCmd.trim();
+      if (startup.isNotEmpty) {
+        // Wait for the shell's first output (its prompt), so the command shows
+        // up after the login banner like a typed one.
+        await firstOutput.future.timeout(const Duration(seconds: 3), onTimeout: () {});
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        if (!stale() && status == SessStatus.connected) _send('$startup\r');
+      }
     } catch (e) {
       if (stale()) return;
-      _client?.close();
-      _client = null;
+      _link?.close();
+      _link = null;
       final (key, arg) = _explain(e);
       // Wrong (or missing) password: ask again and retry with what the user
       // types. Each retry needs a new answer, so there is no silent loop, and
@@ -229,16 +240,32 @@ class TermSession extends ChangeNotifier {
   /// [error] in the language of [s] (falls back to the stored text).
   String? errorIn(S s) => errorKey == null ? error : s.f(errorKey!, {'msg': errorArg ?? ''});
 
+  void _endConnection() {
+    forwards.stopAll();
+    _log?.close();
+    _log = null;
+  }
+
   void _closed(int gen) {
     if (gen != _gen) return;
     if (status == SessStatus.closed || status == SessStatus.failed) return;
+    _endConnection();
     status = SessStatus.closed;
     _info('\r\n[connection closed]');
     notifyListeners();
   }
 
+  static (String?, String?) explainError(Object e) => _explain(e);
+
   /// Localization key (null for free text) and argument for a connect error.
   static (String?, String?) _explain(Object e) {
+    if (e is JumpHostError) {
+      final j = e.jump;
+      if (j == null) return ('errJumpMissing', null);
+      final (k, a) = _explain(e.cause);
+      final why = k == null ? (a ?? '') : S.current.f(k, {'msg': a ?? ''});
+      return ('errJump', '${j.name}: $why');
+    }
     // The transport closing early (host key rejected, network drop) surfaces as an
     // auth abort; explain the real cause instead of blaming the password.
     if (e is SSHAuthAbortError) {
@@ -367,22 +394,54 @@ class TermSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Runs [cmd] on the server in a separate channel (not in the terminal) and
+  /// returns its output. Null when not connected.
+  Future<String?> exec(String cmd) async {
+    final c = _client;
+    if (c == null || status != SessStatus.connected) return null;
+    final r = await c.run(cmd, stderr: true).timeout(const Duration(seconds: 20));
+    return utf8.decode(r, allowMalformed: true);
+  }
+
+  /// Adds [publicLine] to the server's ~/.ssh/authorized_keys (once).
+  /// Returns true when it was added, false when it was already there.
+  /// Throws when the command failed.
+  Future<bool> installPublicKey(String publicLine) async {
+    final out = await exec(installKeyCommand(publicLine));
+    if (out == null) throw StateError('not connected');
+    if (out.contains('MTERM_KEY_ADDED')) return true;
+    if (out.contains('MTERM_KEY_EXISTS')) return false;
+    throw StateError(out.trim());
+  }
+
+  /// Starts / stops one forwarding rule of this host on the live connection.
+  Future<bool> startForward(ForwardRule r) async {
+    final c = _client;
+    if (c == null || status != SessStatus.connected) return false;
+    return forwards.start(c, r);
+  }
+
+  /// The connection, for SFTP on the same login (null when not connected).
+  SSHClient? get client => status == SessStatus.connected ? _client : null;
+
   Future<void> reconnect(HostKeyPrompt prompt) async {
     _gen++; // the old connection's close events must not mark the new one closed
+    _endConnection();
     _shell?.close();
-    _client?.close();
+    _link?.close();
     _shell = null;
-    _client = null;
+    _link = null;
     terminal.write('\r\n');
     await connect(prompt);
   }
 
   void close() {
     _gen++;
+    _endConnection();
     _shell?.close();
-    _client?.close();
+    _link?.close();
     _shell = null;
-    _client = null;
+    _link = null;
     if (status == SessStatus.closed) return;
     status = SessStatus.closed;
     notifyListeners();
@@ -409,4 +468,10 @@ class Sessions extends ChangeNotifier {
     list.remove(s);
     notifyListeners();
   }
+}
+
+/// Readable text for a connection error, in [s]'s language.
+String describeError(Object e, S s) {
+  final (k, a) = TermSession.explainError(e);
+  return k == null ? (a ?? '$e') : s.f(k, {'msg': a ?? ''});
 }

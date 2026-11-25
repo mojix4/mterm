@@ -6,6 +6,7 @@ import '../session.dart';
 import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
+import 'files_screen.dart';
 import 'host_edit_screen.dart';
 import 'quick_connect.dart';
 
@@ -26,14 +27,9 @@ class _HostsScreenState extends State<HostsScreen> {
         final s = S.of(context);
         final p = context.pal;
         final sessions = Sessions.i.list;
-        final hosts = Store.i.hosts
-            .where((h) =>
-                q.isEmpty ||
-                h.label.toLowerCase().contains(q) ||
-                h.host.toLowerCase().contains(q) ||
-                h.user.toLowerCase().contains(q))
-            .toList()
+        final hosts = Store.i.hosts.where((h) => hostMatches(h, q)).toList()
           ..sort((a, b) => (b.lastUsed ?? '').compareTo(a.lastUsed ?? ''));
+        final groups = groupHosts(hosts);
         return Scaffold(
           appBar: AppBar(title: Text(s['navHosts']), actions: [
             IconButton(
@@ -89,35 +85,58 @@ class _HostsScreenState extends State<HostsScreen> {
                           onTap: () => openSession(context, ss),
                         ),
                     ]),
-                  if (hosts.isNotEmpty)
-                    Section(title: s['allHosts'], children: [
-                      for (final h in hosts)
-                        ListTile(
-                          contentPadding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
-                          leading: HostAvatar(color: h.color),
-                          title: Text(h.label.isEmpty ? h.host : h.label,
-                              style: const TextStyle(fontWeight: FontWeight.w700)),
-                          subtitle: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Ltr('ssh ${h.address}', style: TextStyle(color: p.muted, fontSize: 12.5)),
-                          ),
-                          trailing: PopupMenuButton<String>(
-                            icon: Icon(Icons.more_vert, color: p.muted),
-                            onSelected: (v) => _menu(v, h),
-                            itemBuilder: (_) => [
-                              PopupMenuItem(value: 'edit', child: Text(s['edit'])),
-                              PopupMenuItem(value: 'dup', child: Text(s['duplicateHost'])),
-                              PopupMenuItem(value: 'del', child: Text(s['delete'], style: TextStyle(color: p.red))),
-                            ],
-                          ),
-                          onTap: () => openHost(context, h),
-                        ),
-                    ]),
+                  if (hosts.isEmpty && q.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Text(s['noMatches'], textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
+                    ),
+                  for (final g in groups.entries)
+                    Section(
+                      key: ValueKey('group-${g.key}'),
+                      title: g.key.isNotEmpty ? g.key : (groups.length > 1 ? s['otherHosts'] : s['allHosts']),
+                      children: [for (final h in g.value) _hostTile(s, p, h)],
+                    ),
                 ]),
         );
       },
     );
   }
+
+  Widget _hostTile(S s, Palette p, Host h) => ListTile(
+        contentPadding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
+        leading: HostAvatar(color: h.color),
+        title: Text(h.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Ltr('ssh ${h.address}', style: TextStyle(color: p.muted, fontSize: 12.5)),
+          ),
+          if (h.tags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(spacing: 4, runSpacing: 4, children: [
+                for (final t in h.tags)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                    decoration: BoxDecoration(
+                        color: p.accent.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(8)),
+                    child: Text(t, style: TextStyle(color: p.accent, fontSize: 11)),
+                  ),
+              ]),
+            ),
+        ]),
+        trailing: PopupMenuButton<String>(
+          icon: Icon(Icons.more_vert, color: p.muted),
+          onSelected: (v) => _menu(v, h),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'edit', child: Text(s['edit'])),
+            PopupMenuItem(value: 'files', child: Text(s['navFiles'])),
+            PopupMenuItem(value: 'dup', child: Text(s['duplicateHost'])),
+            PopupMenuItem(value: 'del', child: Text(s['delete'], style: TextStyle(color: p.red))),
+          ],
+        ),
+        onTap: () => openHost(context, h),
+      );
 
   String _status(S s, TermSession ss) => switch (ss.status) {
         SessStatus.connecting => s['statusConnecting'],
@@ -169,6 +188,7 @@ class _HostsScreenState extends State<HostsScreen> {
   Future<void> _menu(String v, Host h) async {
     if (v == 'edit') return _edit(h);
     if (v == 'dup') return _edit(h, duplicate: true);
+    if (v == 'files') return openFiles(context, h);
     if (v == 'del') {
       final s = S.of(context);
       final ok = await confirm(
@@ -177,4 +197,21 @@ class _HostsScreenState extends State<HostsScreen> {
       if (ok) await Store.i.deleteHost(h);
     }
   }
+}
+
+/// Search over name, address, user, group and tags ([q] is lower-case).
+bool hostMatches(Host h, String q) {
+  if (q.isEmpty) return true;
+  bool has(String v) => v.toLowerCase().contains(q);
+  return has(h.label) || has(h.host) || has(h.user) || has(h.group) || h.tags.any(has);
+}
+
+/// Hosts by group name (sorted), ungrouped ('') last; order inside kept.
+Map<String, List<Host>> groupHosts(List<Host> hosts) {
+  final m = <String, List<Host>>{};
+  for (final h in hosts) {
+    m.putIfAbsent(h.group.trim(), () => []).add(h);
+  }
+  final keys = m.keys.where((k) => k.isNotEmpty).toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  return {for (final k in keys) k: m[k]!, if (m.containsKey('')) '': m['']!};
 }

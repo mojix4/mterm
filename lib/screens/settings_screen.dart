@@ -8,6 +8,7 @@ import '../store.dart';
 import '../themes.dart';
 import '../updater.dart';
 import 'common.dart';
+import 'data_screens.dart';
 import 'lock_screen.dart';
 import 'terminal_screen.dart';
 
@@ -89,6 +90,22 @@ class SettingsScreen extends StatelessWidget {
                 },
               ),
               SwitchListTile(
+                key: const ValueKey('log-sessions'),
+                title: Text(s['logSessions']),
+                subtitle: Text(s['logSessionsHint'], style: TextStyle(color: p.muted)),
+                value: st.logSessions,
+                onChanged: (v) {
+                  st.logSessions = v;
+                  _save();
+                },
+              ),
+              ListTile(
+                key: const ValueKey('view-logs'),
+                title: Text(s['sessionLogs']),
+                trailing: Icon(Icons.chevron_right, color: p.muted),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogsScreen())),
+              ),
+              SwitchListTile(
                 title: Text(s['keepScreenOn']),
                 subtitle: Text(s['whileTerminalOpen'], style: TextStyle(color: p.muted)),
                 value: st.wakelock,
@@ -117,6 +134,34 @@ class SettingsScreen extends StatelessWidget {
                       ok: s['clearIt'], danger: true)) {
                     await Store.i.clearKnownHosts();
                     _save();
+                  }
+                },
+              ),
+            ]),
+            Section(title: s['backup'], children: [
+              ListTile(
+                key: const ValueKey('export-backup'),
+                leading: const Icon(Icons.backup_outlined),
+                title: Text(s['exportBackup']),
+                subtitle: Text(s['exportBackupHint'], style: TextStyle(color: p.muted)),
+                onTap: () => exportBackup(context),
+              ),
+              ListTile(
+                key: const ValueKey('import-backup'),
+                leading: const Icon(Icons.settings_backup_restore),
+                title: Text(s['importBackup']),
+                subtitle: Text(s['importBackupHint'], style: TextStyle(color: p.muted)),
+                onTap: () => importBackup(context),
+              ),
+              ListTile(
+                key: const ValueKey('clear-history'),
+                leading: const Icon(Icons.history_toggle_off),
+                title: Text(s['clearHistory']),
+                subtitle: Text(s.f('nCommands', {'n': s.num(Store.i.history.length)}), style: TextStyle(color: p.muted)),
+                onTap: () async {
+                  if (await confirm(context, s['clearHistory'], s['clearHistoryBody'], ok: s['clearIt'], danger: true)) {
+                    await Store.i.clearHistory();
+                    if (context.mounted) toast(context, s['historyCleared']);
                   }
                 },
               ),

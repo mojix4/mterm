@@ -184,3 +184,16 @@ String testKey() => File(keyPath).existsSync()
     : '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n';
 
 Finder fieldLabeled(String label) => find.widgetWithText(TextFormField, label);
+
+/// Scrolls the host form down to its bottom Save button and taps it (the form
+/// is longer than a phone screen since groups, jump host and forwarding).
+Future<void> tapSave(WidgetTester t) async {
+  final btn = find.widgetWithText(FilledButton, 'ذخیره');
+  if (btn.evaluate().isEmpty) {
+    final list = find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down);
+    await t.scrollUntilVisible(btn, 300, scrollable: list.last);
+  }
+  await t.ensureVisible(btn);
+  await t.pumpAndSettle();
+  await t.tap(btn);
+}

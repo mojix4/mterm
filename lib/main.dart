@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'l10n.dart';
+import 'screens/files_screen.dart';
 import 'screens/hosts_screen.dart';
 import 'screens/lock_screen.dart';
 import 'screens/settings_screen.dart';
@@ -104,13 +105,15 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      body: IndexedStack(index: tab, children: const [HostsScreen(), SnippetsScreen(), SettingsScreen()]),
+      body: IndexedStack(index: tab, children: const [HostsScreen(), FilesScreen(), SnippetsScreen(), SettingsScreen()]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
         onDestinationSelected: (i) => setState(() => tab = i),
         destinations: [
           NavigationDestination(
               icon: const Icon(Icons.dns_outlined), selectedIcon: const Icon(Icons.dns), label: s['navHosts']),
+          NavigationDestination(
+              icon: const Icon(Icons.folder_outlined), selectedIcon: const Icon(Icons.folder), label: s['navFiles']),
           NavigationDestination(
               icon: const Icon(Icons.bolt_outlined), selectedIcon: const Icon(Icons.bolt), label: s['navSnippets']),
           NavigationDestination(

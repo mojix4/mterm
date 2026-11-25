@@ -81,7 +81,7 @@ void main() {
       await t.enterText(fieldLabeled('پورت'), '2200');
       await t.enterText(fieldLabeled('نام کاربری'), 'admin');
       await t.enterText(fieldLabeled('رمز عبور'), 'S3cret pw');
-      await t.tap(find.widgetWithText(FilledButton, 'ذخیره'));
+      await tapSave(t);
       await t.pumpAndSettle();
 
       expect(find.text('سرور تست'), findsOneWidget);
@@ -100,7 +100,7 @@ void main() {
       expect(find.text('S3cret pw'), findsOneWidget); // secret loaded into the form
       await t.enterText(fieldLabeled('نام (اختیاری)'), 'سرور اصلی');
       await t.enterText(fieldLabeled('پورت'), '22');
-      await t.tap(find.widgetWithText(FilledButton, 'ذخیره'));
+      await tapSave(t);
       await t.pumpAndSettle();
       expect(find.text('سرور اصلی'), findsOneWidget);
       expect(find.text('ssh admin@10.0.0.5'), findsOneWidget);
@@ -112,7 +112,7 @@ void main() {
       // duplicate
       await launch(t);
       await openHostMenu(t, 'سرور اصلی', 'کپی از این سرور');
-      await t.tap(find.widgetWithText(FilledButton, 'ذخیره'));
+      await tapSave(t);
       await t.pumpAndSettle();
       expect(Store.i.hosts, hasLength(2));
       expect(find.text('سرور اصلی (کپی)'), findsOneWidget);
@@ -221,12 +221,12 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('دستور جدید'), findsOneWidget);
       // empty -> nothing saved, sheet stays
-      await t.tap(find.widgetWithText(FilledButton, 'ذخیره'));
+      await tapSave(t);
       await t.pumpAndSettle();
       expect(find.text('دستور جدید'), findsOneWidget);
       await t.enterText(find.widgetWithText(TextField, 'نام'), 'ری‌استارت وب');
       await t.enterText(find.widgetWithText(TextField, 'دستور'), 'systemctl restart nginx');
-      await t.tap(find.widgetWithText(FilledButton, 'ذخیره'));
+      await tapSave(t);
       await t.pumpAndSettle();
       expect(find.text('ری‌استارت وب'), findsOneWidget);
       expect(Store.i.snippets.length, before + 1);
@@ -237,7 +237,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('ویرایش دستور'), findsOneWidget);
       await t.enterText(find.widgetWithText(TextField, 'دستور'), 'systemctl reload nginx');
-      await t.tap(find.widgetWithText(FilledButton, 'ذخیره'));
+      await tapSave(t);
       await t.pumpAndSettle();
       expect(find.text('systemctl reload nginx'), findsOneWidget);
       expect(Store.i.snippets.length, before + 1);
@@ -852,7 +852,7 @@ void main() {
           ..errorArg = 'Network is unreachable';
         await launch(t);
         final nav = find.byType(NavigationDestination);
-        await t.tap(nav.at(1));
+        await t.tap(nav.at(2));
         await t.pumpAndSettle();
         await t.tap(find.byIcon(Icons.auto_awesome).first); // "Ready commands" segment
         await t.pumpAndSettle();
@@ -863,7 +863,7 @@ void main() {
         await t.pumpAndSettle();
         await t.tapAt(const Offset(5, 5));
         await t.pumpAndSettle();
-        await t.tap(nav.at(2));
+        await t.tap(nav.at(3));
         await t.pumpAndSettle();
         await t.drag(_vScroll.last, const Offset(0, -3000));
         await t.pumpAndSettle();

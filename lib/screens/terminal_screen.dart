@@ -1,17 +1,23 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:xterm/xterm.dart';
 
+import '../keys.dart';
 import '../l10n.dart';
+import '../models.dart';
 import '../session.dart';
+import '../term_search.dart';
 import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
+import 'files_screen.dart';
+import 'host_edit_screen.dart' show ForwardRuleDialog;
 import 'quick_connect.dart';
 import '../suggest.dart';
 
@@ -73,6 +79,22 @@ const allBarKeys = [
   'paste',
 ];
 
+/// Windows / Linux / macOS (hardware keyboard, wide windows).
+bool get isDesktop => const {TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS}
+    .contains(defaultTargetPlatform);
+
+/// Width from which the terminal can show two sessions side by side.
+const splitMinWidth = 900.0;
+
+/// Terminal keyboard shortcuts. Desktop adds Ctrl+Shift+V paste to xterm's
+/// Ctrl+V paste and Ctrl+Shift+C copy; mobile keeps xterm's defaults.
+Map<ShortcutActivator, Intent> terminalShortcuts() => {
+      ...defaultTerminalShortcuts,
+      if (isDesktop)
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true, shift: true):
+            const PasteTextIntent(SelectionChangedCause.keyboard),
+    };
+
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key, required this.session});
   final TermSession session;
@@ -84,7 +106,20 @@ class _TerminalScreenState extends State<TerminalScreen> {
   TermSession get s => widget.session;
   final controller = TerminalController();
   final focus = FocusNode();
+  final scroll = ScrollController();
   late double fontSize = Store.i.settings.fontSize;
+
+  // search in output
+  bool searching = false;
+  final searchText = TextEditingController();
+  final searchFocus = FocusNode();
+  List<TermMatch> matches = [];
+  int matchIndex = -1;
+  final List<TerminalHighlight> _marks = [];
+
+  // split view (desktop / wide screens)
+  bool split = false;
+  TermSession? other;
 
   // pinch to zoom
   final Map<int, Offset> _pointers = {};
@@ -110,8 +145,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _holdTimer?.cancel();
     s.removeListener(_offerSave);
     WakelockPlus.disable();
+    _clearMarks();
     controller.dispose();
     focus.dispose();
+    scroll.dispose();
+    searchText.dispose();
+    searchFocus.dispose();
     super.dispose();
   }
 
@@ -428,6 +467,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
               ),
             ]),
             actions: [
+              if (MediaQuery.sizeOf(context).width >= splitMinWidth)
+                IconButton(
+                  key: const ValueKey('split-toggle'),
+                  tooltip: l['splitView'],
+                  isSelected: split,
+                  icon: const Icon(Icons.vertical_split_outlined),
+                  selectedIcon: const Icon(Icons.vertical_split),
+                  onPressed: _toggleSplit,
+                ),
               IconButton(tooltip: l['navSnippets'], icon: const Icon(Icons.bolt), onPressed: _snippets),
               PopupMenuButton<String>(
                 onSelected: (v) {
@@ -444,6 +492,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       _reconnect();
                     case 'saveServer':
                       saveQuickHost(s);
+                    case 'search':
+                      _openSearch();
+                    case 'files':
+                      openFiles(context, s.host, session: s);
+                    case 'forwards':
+                      _forwardsSheet();
+                    case 'installKey':
+                      _installKey();
                     case 'close':
                       Sessions.i.close(s);
                       Navigator.of(context).pop();
@@ -451,6 +507,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 },
                 itemBuilder: (_) => [
                   if (s.transient) PopupMenuItem(value: 'saveServer', child: Text(l['saveServer'])),
+                  PopupMenuItem(value: 'search', child: Text(l['searchOutput'])),
+                  PopupMenuItem(value: 'files', child: Text(l['navFiles'])),
+                  if (!s.transient) PopupMenuItem(value: 'forwards', child: Text(l['portForwarding'])),
+                  if (!s.transient && s.status == SessStatus.connected)
+                    PopupMenuItem(value: 'installKey', child: Text(l['installKey'])),
                   PopupMenuItem(value: 'copy', child: Text(l['copySelection'])),
                   PopupMenuItem(value: 'paste', child: Text(l['paste'])),
                   PopupMenuItem(value: 'big', child: Text(l['fontBigger'])),
@@ -465,8 +526,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
           body: SafeArea(
             top: false,
             child: Column(children: [
+              if (searching) _searchBar(barBg, fg),
               Expanded(
-                child: Directionality(
+                child: _withSplit(Directionality(
                   textDirection: TextDirection.ltr,
                   child: Listener(
                     onPointerDown: _onDown,
@@ -479,6 +541,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
                         key: _tvKey,
                         controller: controller,
                         focusNode: focus,
+                        scrollController: scroll,
+                        shortcuts: terminalShortcuts(),
                         autofocus: true,
                         theme: theme,
                         deleteDetection: true,
@@ -499,7 +563,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                         Positioned(left: 12, right: 12, bottom: 12, child: _reconnectBanner()),
                     ])),
                   ),
-                ),
+                ), theme, light),
               ),
               Container(
                 color: barBg,
@@ -531,6 +595,309 @@ class _TerminalScreenState extends State<TerminalScreen> {
         );
       },
     );
+  }
+
+  // ---- search in output
+  void _openSearch() {
+    setState(() => searching = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => searchFocus.requestFocus());
+    if (searchText.text.isNotEmpty) _runSearch(searchText.text);
+  }
+
+  void _closeSearch() {
+    _clearMarks();
+    setState(() {
+      searching = false;
+      matches = [];
+      matchIndex = -1;
+    });
+    focus.requestFocus();
+  }
+
+  void _clearMarks() {
+    for (final m in _marks) {
+      m.dispose();
+    }
+    _marks.clear();
+  }
+
+  void _runSearch(String q) {
+    final found = findInBuffer(s.terminal.buffer, q);
+    setState(() {
+      matches = found;
+      // start from the newest match (bottom), like most terminals
+      matchIndex = found.isEmpty ? -1 : found.length - 1;
+    });
+    _showMatch();
+  }
+
+  void _step(int d) {
+    if (matches.isEmpty) return;
+    setState(() => matchIndex = (matchIndex + d) % matches.length);
+    _showMatch();
+  }
+
+  void _showMatch() {
+    _clearMarks();
+    if (matches.isEmpty) return;
+    final b = s.terminal.buffer;
+    final cur = matches[matchIndex];
+    // highlight what is near the current match (the whole list could be huge)
+    for (final m in matches) {
+      if ((m.y - cur.y).abs() > 200) continue;
+      if (m.y >= b.lines.length) continue;
+      final current = m == cur;
+      _marks.add(controller.highlight(
+        p1: b.createAnchor(m.x, m.y),
+        p2: b.createAnchor(m.x + m.length, m.y),
+        color: current ? const Color(0xCCFF9800) : const Color(0x66FFEB3B),
+      ));
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(cur.y));
+  }
+
+  void _scrollTo(int y) {
+    if (!scroll.hasClients) return;
+    final tv = _tvKey.currentState;
+    if (tv == null) return;
+    final lh = tv.renderTerminal.lineHeight;
+    final pos = scroll.position;
+    final target = (y * lh - pos.viewportDimension / 2 + lh).clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    scroll.jumpTo(target.toDouble());
+  }
+
+  Widget _searchBar(Color bg, Color fg) {
+    final l = S.of(context);
+    final count = matches.isEmpty ? '0/0' : '${matchIndex + 1}/${matches.length}';
+    return Container(
+      color: bg,
+      padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+      child: Row(children: [
+        Expanded(
+          child: TextField(
+            key: const ValueKey('term-search'),
+            controller: searchText,
+            focusNode: searchFocus,
+            textDirection: TextDirection.ltr,
+            autocorrect: false,
+            style: TextStyle(color: fg, fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: l['searchOutputHint'],
+              prefixIcon: Icon(Icons.search, color: fg.withValues(alpha: 0.6), size: 20),
+            ),
+            onChanged: _runSearch,
+            onSubmitted: (_) {
+              _step(-1);
+              searchFocus.requestFocus();
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(count, key: const ValueKey('term-search-count'), style: TextStyle(color: fg, fontSize: 12.5)),
+        IconButton(
+            key: const ValueKey('term-search-prev'),
+            tooltip: l['previous'],
+            color: fg,
+            icon: const Icon(Icons.keyboard_arrow_up),
+            onPressed: matches.isEmpty ? null : () => _step(-1)),
+        IconButton(
+            key: const ValueKey('term-search-next'),
+            tooltip: l['next'],
+            color: fg,
+            icon: const Icon(Icons.keyboard_arrow_down),
+            onPressed: matches.isEmpty ? null : () => _step(1)),
+        IconButton(tooltip: l['close'], color: fg, icon: const Icon(Icons.close), onPressed: _closeSearch),
+      ]),
+    );
+  }
+
+  // ---- split view
+  Widget _withSplit(Widget main, TerminalTheme theme, bool light) {
+    final o = other;
+    if (!split || o == null || !Sessions.i.list.contains(o) || MediaQuery.sizeOf(context).width < splitMinWidth) {
+      return main;
+    }
+    return Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(children: [
+      Expanded(child: main),
+      Container(width: 2, color: light ? const Color(0x22000000) : const Color(0x33FFFFFF)),
+      Expanded(
+        child: SplitPane(
+          key: ValueKey(o),
+          session: o,
+          theme: theme,
+          fontSize: fontSize,
+          onClose: () => setState(() => split = false),
+        ),
+      ),
+    ]));
+  }
+
+  Future<void> _toggleSplit() async {
+    if (split) {
+      setState(() => split = false);
+      return;
+    }
+    final l = S.of(context);
+    final p = context.pal;
+    final open = Sessions.i.list.where((x) => x != s).toList();
+    final pick = await showDialog<Object>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: Text(l['splitPick']),
+        children: [
+          for (final x in open)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, x),
+              child: Row(children: [
+                Icon(Icons.terminal, color: x.status == SessStatus.connected ? p.green : p.muted, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text(x.host.name)),
+              ]),
+            ),
+          if (open.isNotEmpty) const Divider(),
+          for (final h in Store.i.hosts)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, h),
+              child: Row(children: [
+                Icon(Icons.add, color: p.accent, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text(h.name)),
+              ]),
+            ),
+        ],
+      ),
+    );
+    if (pick == null || !mounted) return;
+    TermSession o;
+    if (pick is TermSession) {
+      o = pick;
+    } else {
+      o = Sessions.i.open(pick as Host)..passwordPrompt = passwordPrompt;
+      o.connect(hostKeyPrompt);
+    }
+    setState(() {
+      other = o;
+      split = true;
+    });
+  }
+
+  // ---- port forwarding
+  void _forwardsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (c) => ListenableBuilder(
+        listenable: Listenable.merge([s, s.forwards, Store.i]),
+        builder: (c, _) {
+          final l = S.of(c);
+          final p = c.pal;
+          final live = s.status == SessStatus.connected;
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(c).height * 0.8),
+              child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(12, 0, 12, 20), children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                  child: Text(l['portForwarding'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+                  child: Text(l['fwdSheetHint'], style: TextStyle(color: p.muted, fontSize: 12.5)),
+                ),
+                if (s.host.forwards.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(l['noRules'], textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
+                  ),
+                for (final r in s.host.forwards)
+                  SwitchListTile(
+                    key: ValueKey('fwd-${r.id}'),
+                    secondary: Icon(r.isDynamic ? Icons.public : Icons.swap_horiz, color: p.accent),
+                    title: Align(alignment: AlignmentDirectional.centerStart, child: Ltr(r.summary)),
+                    subtitle: Text(
+                      s.forwards.errors[r.id] != null
+                          ? l.f('fwdError', {'msg': s.forwards.errors[r.id]!})
+                          : s.forwards.isRunning(r)
+                              ? l.f('fwdActive', {'addr': '127.0.0.1:${s.forwards.boundPort(r)}'})
+                              : l['fwdStopped'],
+                      style: TextStyle(
+                          color: s.forwards.errors[r.id] != null
+                              ? p.red
+                              : s.forwards.isRunning(r)
+                                  ? p.green
+                                  : p.muted,
+                          fontSize: 12.5),
+                    ),
+                    value: s.forwards.isRunning(r),
+                    onChanged: !live
+                        ? null
+                        : (v) {
+                            if (v) {
+                              s.startForward(r);
+                            } else {
+                              s.forwards.stop(r);
+                            }
+                          },
+                  ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const ValueKey('sheet-add-forward'),
+                    icon: const Icon(Icons.add),
+                    label: Text(l['addRule']),
+                    onPressed: () async {
+                      final r = await showDialog<ForwardRule>(context: c, builder: (_) => const ForwardRuleDialog());
+                      if (r == null) return;
+                      s.host.forwards.add(r);
+                      await Store.i.updateHost(s.host);
+                      if (r.autoStart) await s.startForward(r);
+                    },
+                  ),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ---- install public key
+  Future<void> _installKey() async {
+    final l = S.of(context);
+    final h = s.host;
+    final sec = await Store.i.secret(h.id);
+    String? line;
+    String? newPem;
+    if (sec.privateKey.trim().isNotEmpty) {
+      line = publicKeyFromPrivate(sec.privateKey, passphrase: sec.passphrase);
+    }
+    if (!mounted) return;
+    final body = line != null ? l['installKeyBody'] : l['installKeyNewBody'];
+    if (!await confirm(context, l['installKey'], body, ok: l['install'])) return;
+    if (line == null) {
+      final g = generateEd25519(comment: 'mterm@${h.user}');
+      line = g.publicLine;
+      newPem = g.privatePem;
+    }
+    bool added;
+    try {
+      added = await s.installPublicKey(line);
+    } catch (e) {
+      if (mounted) toast(context, l.f('opFailed', {'msg': '$e'}));
+      return;
+    }
+    if (newPem != null) await Store.i.saveKey(h.id, newPem.trim());
+    if (!mounted) return;
+    toast(context, added ? l['keyInstalled'] : l['keyAlreadyInstalled']);
+    if (h.auth != 'key' && await confirm(context, l['useKeyTitle'], l['useKeyBody'], ok: l['useKey'])) {
+      h.auth = 'key';
+      await Store.i.updateHost(h);
+    }
   }
 
   void _reconnect() {
@@ -620,6 +987,104 @@ class _KeyCap extends StatelessWidget {
                   style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 14, color: active ? Colors.white : fg)),
         ),
       ),
+    );
+  }
+}
+
+/// Second terminal shown next to the main one on wide screens.
+class SplitPane extends StatefulWidget {
+  const SplitPane({super.key, required this.session, required this.theme, required this.fontSize, required this.onClose});
+  final TermSession session;
+  final TerminalTheme theme;
+  final double fontSize;
+  final VoidCallback onClose;
+  @override
+  State<SplitPane> createState() => _SplitPaneState();
+}
+
+class _SplitPaneState extends State<SplitPane> {
+  final controller = TerminalController();
+  final focus = FocusNode();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.session;
+    final st = Store.i.settings;
+    final l = S.of(context);
+    final light = widget.theme.background.computeLuminance() > 0.5;
+    final fg = light ? const Color(0xFF24292F) : const Color(0xFFE6EBF7);
+    final p = context.pal;
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) => Column(children: [
+        Container(
+          height: 34,
+          color: light ? const Color(0xFFF0F2F6) : Color.lerp(widget.theme.background, Colors.white, 0.06),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: switch (s.status) {
+                  SessStatus.connected => p.green,
+                  SessStatus.connecting => p.amber,
+                  _ => p.red,
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(s.host.name,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: fg, fontSize: 13)),
+            ),
+            if (s.status == SessStatus.failed || s.status == SessStatus.closed)
+              TextButton(
+                onPressed: () {
+                  s.passwordPrompt ??= passwordPrompt;
+                  s.reconnect(hostKeyPrompt);
+                },
+                child: Text(l['reconnect']),
+              ),
+            IconButton(
+              key: const ValueKey('split-close'),
+              tooltip: l['close'],
+              iconSize: 18,
+              color: fg,
+              icon: const Icon(Icons.close),
+              onPressed: widget.onClose,
+            ),
+          ]),
+        ),
+        Expanded(
+          child: TerminalView(
+            s.terminal,
+            controller: controller,
+            focusNode: focus,
+            theme: widget.theme,
+            shortcuts: terminalShortcuts(),
+            padding: const EdgeInsets.fromLTRB(6, 6, 6, 2),
+            cursorType: switch (st.cursor) {
+              'underline' => TerminalCursorType.underline,
+              'bar' => TerminalCursorType.verticalBar,
+              _ => TerminalCursorType.block,
+            },
+            textStyle: TerminalStyle(
+              fontSize: widget.fontSize,
+              fontFamily: 'JetBrainsMono',
+              fontFamilyFallback: const ['monospace', 'Vazirmatn', 'Noto Color Emoji'],
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }

@@ -19,6 +19,11 @@ dependencies:
   wakelock_plus: ^1.2.8
   crypto: ^3.0.3
   url_launcher: ^6.3.3
+  file_picker: ^11.0.3
+  share_plus: ^12.0.2
+  path_provider: ^2.1.6
+  pointycastle: ^4.0.0
+  pinenacl: ^0.6.0
 
 dev_dependencies:
   flutter_test:
