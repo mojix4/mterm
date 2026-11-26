@@ -1,0 +1,22 @@
+name: Windows keyboard check
+
+on:
+  push:
+    branches: [win-check]
+  workflow_dispatch:
+
+jobs:
+  windows-keyboard:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Widget tests on Windows
+        run: flutter test test/features_ui_test.dart test/ui_test.dart --exclude-tags golden
+      - name: Real Windows app, OS keystrokes
+        run: flutter test integration_test/windows_keyboard_test.dart -d windows
