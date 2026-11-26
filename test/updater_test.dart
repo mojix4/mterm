@@ -14,10 +14,12 @@ void main() {
       'assets': [
         {'name': 'MTerm-v1.0.12.apk', 'browser_download_url': 'https://x/a.apk'},
         {'name': 'MTerm-v1.0.12-windows-x64.zip', 'browser_download_url': 'https://x/w.zip'},
+        {'name': 'MTerm-v1.0.12-ios-unsigned.ipa', 'browser_download_url': 'https://x/i.ipa'},
       ],
     };
     expect(parseRelease(j, windows: false).downloadUrl, 'https://x/a.apk');
     expect(parseRelease(j, windows: true).downloadUrl, 'https://x/w.zip');
+    expect(parseRelease(j, windows: false, ios: true).downloadUrl, 'https://x/i.ipa');
     expect(parseRelease(j, windows: false).version, '1.0.12');
   });
 }

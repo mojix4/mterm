@@ -27,13 +27,15 @@ int compareVersions(String a, String b) {
 }
 
 /// Picks the installer for this platform from a GitHub release JSON.
-UpdateInfo parseRelease(Map<String, dynamic> j, {required bool windows}) {
+UpdateInfo parseRelease(Map<String, dynamic> j, {required bool windows, bool ios = false}) {
   final tag = (j['tag_name'] as String? ?? '').replaceFirst(RegExp(r'^v'), '');
   final page = j['html_url'] as String? ?? releasesPage;
   String? url;
   for (final a in (j['assets'] as List? ?? const [])) {
     final name = (a['name'] as String? ?? '').toLowerCase();
-    final ok = windows ? name.endsWith('.zip') && name.contains('windows') : name.endsWith('.apk');
+    final ok = ios
+        ? name.endsWith('.ipa')
+        : windows ? name.endsWith('.zip') && name.contains('windows') : name.endsWith('.apk');
     if (ok) url = a['browser_download_url'] as String?;
   }
   return UpdateInfo(tag, url ?? page, page);
@@ -49,7 +51,7 @@ Future<UpdateInfo> fetchLatest() async {
     final res = await req.close().timeout(const Duration(seconds: 15));
     final body = await res.transform(utf8.decoder).join();
     if (res.statusCode != 200) throw HttpException('HTTP ${res.statusCode}');
-    return parseRelease(jsonDecode(body) as Map<String, dynamic>, windows: Platform.isWindows);
+    return parseRelease(jsonDecode(body) as Map<String, dynamic>, windows: Platform.isWindows, ios: Platform.isIOS);
   } finally {
     c.close(force: true);
   }
