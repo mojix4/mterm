@@ -338,6 +338,13 @@ void main() {
     await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await t.pumpAndSettle();
     expect(s.line, 'two');
+    // plain typing from a physical keyboard reaches the session
+    s.line = '';
+    for (final k in [LogicalKeyboardKey.keyL, LogicalKeyboardKey.keyS]) {
+      await t.sendKeyEvent(k, platform: 'windows');
+    }
+    await t.pumpAndSettle();
+    expect(s.line, 'ls');
     Sessions.i.close(s);
     await t.pumpWidget(const SizedBox());
   });

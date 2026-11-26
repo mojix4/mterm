@@ -543,6 +543,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
                         focusNode: focus,
                         scrollController: scroll,
                         shortcuts: terminalShortcuts(),
+                        // Windows: read keys straight from the keyboard; the IME text
+                        // channel can drop typing there.
+                        hardwareKeyboardOnly: isDesktop,
                         autofocus: true,
                         theme: theme,
                         deleteDetection: true,
@@ -1071,6 +1074,9 @@ class _SplitPaneState extends State<SplitPane> {
             focusNode: focus,
             theme: widget.theme,
             shortcuts: terminalShortcuts(),
+                        // Windows: read keys straight from the keyboard; the IME text
+                        // channel can drop typing there.
+                        hardwareKeyboardOnly: isDesktop,
             padding: const EdgeInsets.fromLTRB(6, 6, 6, 2),
             cursorType: switch (st.cursor) {
               'underline' => TerminalCursorType.underline,
