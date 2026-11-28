@@ -61,3 +61,24 @@ jobs:
           echo "SIM=$UDID" >> $GITHUB_ENV
       - name: Real iOS app on simulator
         run: flutter test integration_test/ios_app_test.dart -d $SIM --dart-define=SSH_KEY_B64=$SSH_KEY_B64 --dart-define=SSH_USER=$SSH_USER
+      - name: Background script (opens Settings over the app for 60 s)
+        run: |
+          cat > /tmp/bg.sh <<'SH'
+          for i in $(seq 1 600); do
+            C=$(xcrun simctl get_app_container $SIM com.mojix.mterm data 2>/dev/null)
+            if [ -n "$C" ] && [ -f "$C/Documents/bg_now" ]; then
+              echo "marker found $(date)"; rm -f "$C/Documents/bg_now"
+              xcrun simctl launch $SIM com.apple.Preferences
+              sleep 60
+              echo "foreground again $(date)"
+              xcrun simctl launch $SIM com.mojix.mterm
+              exit 0
+            fi
+            sleep 1
+          done
+          SH
+          nohup bash /tmp/bg.sh > /tmp/bg.log 2>&1 &
+      - name: Real iOS app in background on simulator
+        run: flutter test integration_test/ios_background_test.dart -d $SIM --dart-define=SSH_KEY_B64=$SSH_KEY_B64 --dart-define=SSH_USER=$SSH_USER
+      - if: always()
+        run: cat /tmp/bg.log || true
