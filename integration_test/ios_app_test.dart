@@ -58,9 +58,20 @@ void main() {
     t.testTextInput.register();
     await t.tap(find.byType(TerminalView).first);
     await t.pumpAndSettle();
-    t.testTextInput.enterText('echo typed_\$((5+5))');
+    // like the iOS keyboard: one update per key, on top of the 2-space
+    // placeholder the terminal keeps for backspace detection
+    Future<void> key(String c) async {
+      t.testTextInput.enterText('  $c');
+      await t.pump();
+    }
+    for (final c in 'echo typed_X'.split('')) {
+      await key(c);
+    }
+    t.testTextInput.enterText(' '); // backspace removes the X
     await t.pump();
-    t.testTextInput.enterText('');
+    for (final c in r'$((5+5))'.split('')) {
+      await key(c);
+    }
     s.text('\r');
     await realWait(t, () => s.terminal.buffer.getText().contains('typed_10'));
     // ignore: avoid_print
