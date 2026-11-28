@@ -1,4 +1,4 @@
-name: Windows keyboard check
+name: Windows and iOS check
 
 on:
   push:
@@ -20,3 +20,44 @@ jobs:
         run: flutter test test/features_ui_test.dart test/ui_test.dart --exclude-tags golden
       - name: Real Windows app, OS keystrokes
         run: flutter test integration_test/windows_keyboard_test.dart -d windows
+
+  ios-check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Local sshd on port 2222 (key login)
+        run: |
+          mkdir -p /tmp/sshd && cd /tmp/sshd
+          ssh-keygen -q -t ed25519 -N "" -f hostkey
+          ssh-keygen -q -t ed25519 -N "" -f client
+          cp client.pub authorized_keys
+          cat > cfg <<CFG
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey /tmp/sshd/hostkey
+          AuthorizedKeysFile /tmp/sshd/authorized_keys
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          UsePAM no
+          StrictModes no
+          PidFile /tmp/sshd/pid
+          CFG
+          sudo /usr/sbin/sshd -f /tmp/sshd/cfg
+          sleep 1
+          ssh -o StrictHostKeyChecking=no -i client -p 2222 $(whoami)@127.0.0.1 echo sshd_ok
+          echo "SSH_KEY_B64=$(base64 < client | tr -d '\n')" >> $GITHUB_ENV
+          echo "SSH_USER=$(whoami)" >> $GITHUB_ENV
+      - name: Boot iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcrun simctl boot $UDID
+          echo "SIM=$UDID" >> $GITHUB_ENV
+      - name: Real iOS app on simulator
+        run: flutter test integration_test/ios_app_test.dart -d $SIM --dart-define=SSH_KEY_B64=$SSH_KEY_B64 --dart-define=SSH_USER=$SSH_USER
