@@ -32,6 +32,10 @@ class AppSettings {
   /// Save each session's output to a text file (Settings > Session logs).
   bool logSessions = false;
 
+  /// Hide server addresses and user names in the app UI (Settings, or the eye
+  /// button on the servers list). Terminal output is not touched.
+  bool privacy = false;
+
   static const defaultKeys = [
     'esc', 'tab', 'ctrl', 'alt', '←', '↑', '↓', '→', '|', '/', '-', '~', 'home', 'end', '^C', 'paste'
   ];
@@ -52,6 +56,7 @@ class AppSettings {
         'pinHash': pinHash,
         'lockAfter': lockAfter,
         'logSessions': logSessions,
+        'privacy': privacy,
       };
 
   void load(Map<String, dynamic> j) {
@@ -70,6 +75,7 @@ class AppSettings {
     pinHash = j['pinHash'] ?? pinHash;
     lockAfter = j['lockAfter'] ?? lockAfter;
     logSessions = j['logSessions'] ?? logSessions;
+    privacy = j['privacy'] ?? privacy;
   }
 }
 
@@ -155,6 +161,11 @@ class Store extends ChangeNotifier {
     await _sec.write(key: 'pw_${h.id}', value: s.password);
     await _sec.write(key: 'key_${h.id}', value: s.privateKey);
     await _sec.write(key: 'pp_${h.id}', value: s.passphrase);
+    if (h.hasProxy && s.proxyPassword.isNotEmpty) {
+      await _sec.write(key: 'pxp_${h.id}', value: s.proxyPassword);
+    } else {
+      await _sec.delete(key: 'pxp_${h.id}');
+    }
     await _saveHosts();
     notifyListeners();
   }
@@ -177,7 +188,7 @@ class Store extends ChangeNotifier {
 
   Future<void> deleteHost(Host h) async {
     hosts.removeWhere((x) => x.id == h.id);
-    for (final k in ['pw_', 'key_', 'pp_']) {
+    for (final k in ['pw_', 'key_', 'pp_', 'pxp_']) {
       await _sec.delete(key: '$k${h.id}');
     }
     await _saveHosts();
@@ -194,6 +205,7 @@ class Store extends ChangeNotifier {
         password: await _read('pw_$id'),
         privateKey: await _read('key_$id'),
         passphrase: await _read('pp_$id'),
+        proxyPassword: await _read('pxp_$id'),
       );
 
   /// A failed read (e.g. keystore hiccup) is treated as "not saved" so the app

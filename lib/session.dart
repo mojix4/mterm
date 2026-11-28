@@ -13,6 +13,7 @@ import 'keys.dart';
 import 'l10n.dart';
 import 'models.dart';
 import 'session_log.dart';
+import 'socks5.dart';
 import 'ssh_connect.dart';
 import 'store.dart';
 
@@ -274,6 +275,7 @@ class TermSession extends ChangeNotifier {
       if (r is SSHSocketError) return ('errAuthDropped', null);
       if (e.message.contains('timed out')) return ('errTimeout', null);
     }
+    if (e is Socks5Error) return ('errProxy', e.message);
     if (e is SSHAuthFailError || e is SSHAuthAbortError) return ('errAuth', null);
     if (e is SSHHostkeyError) return ('errHostKey', null);
     if (e is SSHHandshakeError) return ('errHandshake', null);

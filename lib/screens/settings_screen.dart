@@ -168,6 +168,16 @@ class SettingsScreen extends StatelessWidget {
             ]),
             Section(title: s['security'], children: [
               SwitchListTile(
+                key: const ValueKey('privacy-switch'),
+                title: Text(s['privacyMode']),
+                subtitle: Text(s['privacyModeHint'], style: TextStyle(color: p.muted)),
+                value: st.privacy,
+                onChanged: (v) {
+                  st.privacy = v;
+                  _save();
+                },
+              ),
+              SwitchListTile(
                 title: Text(s['pinLock']),
                 value: st.lockEnabled && st.pinHash.isNotEmpty,
                 onChanged: (v) async {

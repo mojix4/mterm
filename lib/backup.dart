@@ -73,7 +73,12 @@ Future<Map<String, dynamic>> collectBackup() async {
   final secrets = <String, dynamic>{};
   for (final h in st.hosts) {
     final sec = await st.secret(h.id);
-    secrets[h.id] = {'pw': sec.password, 'key': sec.privateKey, 'pp': sec.passphrase};
+    secrets[h.id] = {
+      'pw': sec.password,
+      'key': sec.privateKey,
+      'pp': sec.passphrase,
+      if (sec.proxyPassword.isNotEmpty) 'pxp': sec.proxyPassword,
+    };
   }
   return {
     'app': 'mterm',
@@ -135,7 +140,8 @@ Future<RestoreResult> applyBackup(Map<String, dynamic> j, {required bool replace
         HostSecret(
             password: (sec['pw'] ?? '') as String,
             privateKey: (sec['key'] ?? '') as String,
-            passphrase: (sec['pp'] ?? '') as String));
+            passphrase: (sec['pp'] ?? '') as String,
+            proxyPassword: (sec['pxp'] ?? '') as String));
     n++;
   }
   await st.importSnippets(snippets, replace: replace);

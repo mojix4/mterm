@@ -11,6 +11,7 @@ import 'package:xterm/xterm.dart';
 import '../keys.dart';
 import '../l10n.dart';
 import '../models.dart';
+import '../privacy.dart';
 import '../session.dart';
 import '../term_search.dart';
 import '../store.dart';
@@ -19,6 +20,7 @@ import 'common.dart';
 import 'files_screen.dart';
 import 'host_edit_screen.dart' show ForwardRuleDialog;
 import 'quick_connect.dart';
+import 'tools_screen.dart';
 import '../suggest.dart';
 
 const Map<String, TerminalKey> _specialKeys = {
@@ -459,9 +461,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(s.host.label.isEmpty ? s.host.host : s.host.label,
+                  Text(hostTitle(s.host),
                       style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: fg)),
-                  Ltr(s.title?.isNotEmpty == true ? s.title! : s.host.address,
+                  Ltr(s.title?.isNotEmpty == true ? uiText(s.title!) : hostAddress(s.host),
                       style: TextStyle(fontSize: 11.5, color: fg.withValues(alpha: 0.6))),
                 ]),
               ),
@@ -496,6 +498,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       _openSearch();
                     case 'files':
                       openFiles(context, s.host, session: s);
+                    case 'tools':
+                      openTools(context, s.host, session: s);
                     case 'forwards':
                       _forwardsSheet();
                     case 'installKey':
@@ -508,6 +512,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 itemBuilder: (_) => [
                   if (s.transient) PopupMenuItem(value: 'saveServer', child: Text(l['saveServer'])),
                   PopupMenuItem(value: 'search', child: Text(l['searchOutput'])),
+                  PopupMenuItem(value: 'tools', child: Text(l['tools'])),
                   PopupMenuItem(value: 'files', child: Text(l['navFiles'])),
                   if (!s.transient) PopupMenuItem(value: 'forwards', child: Text(l['portForwarding'])),
                   if (!s.transient && s.status == SessStatus.connected)
@@ -757,7 +762,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
               child: Row(children: [
                 Icon(Icons.terminal, color: x.status == SessStatus.connected ? p.green : p.muted, size: 20),
                 const SizedBox(width: 10),
-                Expanded(child: Text(x.host.name)),
+                Expanded(child: Text(hostTitle(x.host))),
               ]),
             ),
           if (open.isNotEmpty) const Divider(),
@@ -767,7 +772,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
               child: Row(children: [
                 Icon(Icons.add, color: p.accent, size: 20),
                 const SizedBox(width: 10),
-                Expanded(child: Text(h.name)),
+                Expanded(child: Text(hostTitle(h))),
               ]),
             ),
         ],
@@ -1046,7 +1051,7 @@ class _SplitPaneState extends State<SplitPane> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(s.host.name,
+              child: Text(hostTitle(s.host),
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: fg, fontSize: 13)),
             ),
             if (s.status == SessStatus.failed || s.status == SessStatus.closed)

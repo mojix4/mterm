@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n.dart';
 import '../main.dart';
 import '../models.dart';
+import '../privacy.dart';
 import '../session.dart';
 import '../themes.dart';
 import 'terminal_screen.dart';
@@ -135,7 +136,7 @@ Future<PasswordAnswer?> passwordPrompt(Host h, {bool wrong = false}) async {
         icon: Icon(wrong ? Icons.lock_reset : Icons.lock_outline, color: wrong ? p.red : p.accent, size: 32),
         title: Text(s['pwTitle']),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Ltr(h.address, style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12.5, color: p.muted)),
+          Ltr(hostAddress(h), style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12.5, color: p.muted)),
           if (wrong) ...[
             const SizedBox(height: 8),
             Text(s['pwWrong'], style: TextStyle(color: p.red, fontSize: 13)),

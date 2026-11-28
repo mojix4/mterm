@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'models.dart';
+import 'socks5.dart';
 import 'store.dart';
 
 /// Asks the user whether to trust a server key. [old] is set when the key changed.
@@ -94,6 +95,11 @@ Future<SshLink> openSsh(
       if (e is JumpHostError) rethrow;
       throw JumpHostError(jump, e);
     }
+  } else if (host.hasProxy) {
+    // the jump host (above) uses its own proxy setting; a direct connection
+    // goes through this host's SOCKS5 proxy
+    socket = await connectSocks5(host.proxyHost.trim(), host.proxyPort, host.host, host.port,
+        user: host.proxyUser, password: secret.proxyPassword, timeout: const Duration(seconds: 15));
   } else {
     socket = await SSHSocket.connect(host.host, host.port, timeout: const Duration(seconds: 12));
   }

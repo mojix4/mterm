@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../keys.dart';
 import '../l10n.dart';
 import '../models.dart';
+import '../privacy.dart';
 import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
@@ -28,6 +29,10 @@ class _HostEditScreenState extends State<HostEditScreen> {
   final group = TextEditingController();
   final tags = TextEditingController();
   final startup = TextEditingController();
+  final proxyHost = TextEditingController();
+  final proxyPort = TextEditingController(text: '1080');
+  final proxyUser = TextEditingController();
+  final proxyPass = TextEditingController();
   String? jumpHostId;
   List<ForwardRule> forwards = [];
   String auth = 'password';
@@ -67,6 +72,9 @@ class _HostEditScreenState extends State<HostEditScreen> {
       group.text = h.group;
       tags.text = h.tags.join(', ');
       startup.text = h.startupCmd;
+      proxyHost.text = h.proxyHost;
+      proxyPort.text = '${h.proxyPort}';
+      proxyUser.text = h.proxyUser;
       jumpHostId = Store.i.hosts.any((x) => x.id == h.jumpHostId) ? h.jumpHostId : null;
       forwards = [
         for (final f in h.forwards) widget.duplicate ? (ForwardRule.fromJson(f.toJson())..id = newId()) : ForwardRule.fromJson(f.toJson())
@@ -77,6 +85,7 @@ class _HostEditScreenState extends State<HostEditScreen> {
           password.text = s.password;
           key.text = s.privateKey;
           passphrase.text = s.passphrase;
+          proxyPass.text = s.proxyPassword;
         });
       });
     } else {
@@ -101,9 +110,17 @@ class _HostEditScreenState extends State<HostEditScreen> {
       startupCmd: startup.text.trim(),
       jumpHostId: jumpHostId,
       forwards: forwards,
+      proxyHost: proxyHost.text.trim(),
+      proxyPort: int.tryParse(proxyPort.text.trim()) ?? 1080,
+      proxyUser: proxyHost.text.trim().isEmpty ? '' : proxyUser.text.trim(),
     );
     await Store.i.upsertHost(
-        h, HostSecret(password: password.text, privateKey: key.text.trim(), passphrase: passphrase.text));
+        h,
+        HostSecret(
+            password: password.text,
+            privateKey: key.text.trim(),
+            passphrase: passphrase.text,
+            proxyPassword: proxyHost.text.trim().isEmpty ? '' : proxyPass.text));
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -311,12 +328,73 @@ class _HostEditScreenState extends State<HostEditScreen> {
             items: [
               DropdownMenuItem<String?>(value: null, child: Text(s['jumpNone'])),
               for (final h in _jumpCandidates())
-                DropdownMenuItem<String?>(value: h.id, child: Text(h.name, overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem<String?>(value: h.id, child: Text(hostTitle(h), overflow: TextOverflow.ellipsis)),
             ],
             onChanged: (v) => setState(() => jumpHostId = v),
           ),
           const SizedBox(height: 6),
           Text(s['jumpHint'], style: TextStyle(color: p.muted, fontSize: 12)),
+          const SizedBox(height: 16),
+          Text(s['proxySocks5'], style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              flex: 3,
+              child: TextFormField(
+                key: const ValueKey('proxy-host-field'),
+                controller: proxyHost,
+                textDirection: ltr,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                onChanged: (_) => setState(() {}),
+                decoration: _dec(s['proxyHost'], hint: s['proxyHostHint']),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextFormField(
+                key: const ValueKey('proxy-port-field'),
+                controller: proxyPort,
+                textDirection: ltr,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: _dec(s['proxyPort']),
+                validator: (v) {
+                  if (proxyHost.text.trim().isEmpty) return null;
+                  final n = int.tryParse((v ?? '').trim());
+                  return n == null || n < 1 || n > 65535 ? s['invalid'] : null;
+                },
+              ),
+            ),
+          ]),
+          if (proxyHost.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('proxy-user-field'),
+                  controller: proxyUser,
+                  textDirection: ltr,
+                  autocorrect: false,
+                  decoration: _dec(s['proxyUserOptional']),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('proxy-pass-field'),
+                  controller: proxyPass,
+                  textDirection: ltr,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: _dec(s['proxyPassOptional']),
+                ),
+              ),
+            ]),
+          ],
+          const SizedBox(height: 6),
+          Text(s['proxyHint'], style: TextStyle(color: p.muted, fontSize: 12)),
           const SizedBox(height: 16),
           Row(children: [
             Expanded(child: Text(s['portForwarding'], style: const TextStyle(fontWeight: FontWeight.w600))),

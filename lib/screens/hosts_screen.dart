@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../l10n.dart';
 import '../models.dart';
+import '../privacy.dart';
 import '../session.dart';
 import '../store.dart';
 import '../themes.dart';
 import 'common.dart';
+import 'broadcast_screen.dart';
 import 'files_screen.dart';
 import 'host_edit_screen.dart';
 import 'quick_connect.dart';
+import 'tools_screen.dart';
 
 class HostsScreen extends StatefulWidget {
   const HostsScreen({super.key});
@@ -32,6 +35,25 @@ class _HostsScreenState extends State<HostsScreen> {
         final groups = groupHosts(hosts);
         return Scaffold(
           appBar: AppBar(title: Text(s['navHosts']), actions: [
+            IconButton(
+              key: const ValueKey('privacy-toggle'),
+              tooltip: s['privacyMode'],
+              isSelected: Store.i.settings.privacy,
+              icon: const Icon(Icons.visibility_outlined),
+              selectedIcon: Icon(Icons.visibility_off, color: p.accent),
+              onPressed: () {
+                Store.i.settings.privacy = !Store.i.settings.privacy;
+                Store.i.saveSettings();
+                toast(context, Store.i.settings.privacy ? s['privacyOn'] : s['privacyOff']);
+              },
+            ),
+            if (Store.i.hosts.length > 1)
+              IconButton(
+                key: const ValueKey('broadcast-open'),
+                tooltip: s['broadcast'],
+                icon: const Icon(Icons.podcasts),
+                onPressed: () => openBroadcast(context),
+              ),
             IconButton(
               key: const ValueKey('quick-connect'),
               tooltip: s['quickConnect'],
@@ -76,7 +98,7 @@ class _HostsScreenState extends State<HostsScreen> {
                       for (final ss in sessions)
                         ListTile(
                           leading: HostAvatar(color: ss.host.color, live: ss.status == SessStatus.connected),
-                          title: Text(ss.host.label.isEmpty ? ss.host.host : ss.host.label),
+                          title: Text(hostTitle(ss.host)),
                           subtitle: Text(_status(s, ss), style: TextStyle(color: _statusColor(p, ss), fontSize: 12.5)),
                           trailing: IconButton(
                             icon: Icon(Icons.close, color: p.muted),
@@ -105,11 +127,11 @@ class _HostsScreenState extends State<HostsScreen> {
   Widget _hostTile(S s, Palette p, Host h) => ListTile(
         contentPadding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
         leading: HostAvatar(color: h.color),
-        title: Text(h.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+        title: Text(hostTitle(h), style: const TextStyle(fontWeight: FontWeight.w700)),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: Ltr('ssh ${h.address}', style: TextStyle(color: p.muted, fontSize: 12.5)),
+            child: Ltr('ssh ${hostAddress(h)}', style: TextStyle(color: p.muted, fontSize: 12.5)),
           ),
           if (h.tags.isNotEmpty)
             Padding(
@@ -130,6 +152,7 @@ class _HostsScreenState extends State<HostsScreen> {
           onSelected: (v) => _menu(v, h),
           itemBuilder: (_) => [
             PopupMenuItem(value: 'edit', child: Text(s['edit'])),
+            PopupMenuItem(value: 'tools', child: Text(s['tools'])),
             PopupMenuItem(value: 'files', child: Text(s['navFiles'])),
             PopupMenuItem(value: 'dup', child: Text(s['duplicateHost'])),
             PopupMenuItem(value: 'del', child: Text(s['delete'], style: TextStyle(color: p.red))),
@@ -189,10 +212,11 @@ class _HostsScreenState extends State<HostsScreen> {
     if (v == 'edit') return _edit(h);
     if (v == 'dup') return _edit(h, duplicate: true);
     if (v == 'files') return openFiles(context, h);
+    if (v == 'tools') return openTools(context, h);
     if (v == 'del') {
       final s = S.of(context);
       final ok = await confirm(
-          context, s['deleteHostTitle'], s.f('deleteHostBody', {'name': h.label.isEmpty ? h.host : h.label}),
+          context, s['deleteHostTitle'], s.f('deleteHostBody', {'name': hostTitle(h)}),
           ok: s['delete'], danger: true);
       if (ok) await Store.i.deleteHost(h);
     }

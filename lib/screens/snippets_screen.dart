@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import '../builtin_commands.dart';
 import '../l10n.dart';
 import '../models.dart';
+import '../privacy.dart';
 import '../session.dart';
 import '../store.dart';
 import '../themes.dart';
+import 'broadcast_screen.dart';
 import 'common.dart';
 
 class SnippetsScreen extends StatefulWidget {
@@ -29,7 +31,15 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
         final s = S.of(context);
         final p = context.pal;
         return Scaffold(
-          appBar: AppBar(title: Text(s['navSnippets'])),
+          appBar: AppBar(title: Text(s['navSnippets']), actions: [
+            IconButton(
+              key: const ValueKey('snippets-broadcast'),
+              tooltip: s['broadcast'],
+              icon: const Icon(Icons.podcasts),
+              onPressed: () => openBroadcast(context),
+            ),
+            const SizedBox(width: 4),
+          ]),
           floatingActionButton: ready
               ? null
               : FloatingActionButton(
@@ -224,7 +234,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
           for (final x in live)
             ListTile(
               leading: HostAvatar(color: x.host.color, live: true, size: 38),
-              title: Text(x.host.label.isEmpty ? x.host.host : x.host.label),
+              title: Text(hostTitle(x.host)),
               onTap: () => Navigator.pop(c, x),
             ),
           const SizedBox(height: 12),
@@ -233,7 +243,7 @@ class _SnippetsScreenState extends State<SnippetsScreen> {
     );
     if (target == null || !mounted) return;
     if (confirmFirst) {
-      final name = target.host.label.isEmpty ? target.host.host : target.host.label;
+      final name = hostTitle(target.host);
       final ok = await confirm(context, s['confirmRunTitle'], s.f('confirmRunBody', {'server': name}), ok: s['run']);
       if (!ok || !mounted) return;
     }

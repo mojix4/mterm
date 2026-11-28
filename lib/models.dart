@@ -23,6 +23,14 @@ class Host {
   /// Port forwarding rules started with each session.
   List<ForwardRule> forwards;
 
+  /// SOCKS5 proxy the connection goes through ('' = none). Its password is
+  /// stored with the other secrets (pxp_<id>).
+  String proxyHost;
+  int proxyPort;
+  String proxyUser;
+
+  bool get hasProxy => proxyHost.trim().isNotEmpty;
+
   Host({
     required this.id,
     required this.label,
@@ -37,6 +45,9 @@ class Host {
     this.startupCmd = '',
     this.jumpHostId,
     List<ForwardRule>? forwards,
+    this.proxyHost = '',
+    this.proxyPort = 1080,
+    this.proxyUser = '',
   })  : tags = tags ?? [],
         forwards = forwards ?? [];
 
@@ -60,6 +71,7 @@ class Host {
         if (startupCmd.isNotEmpty) 'startupCmd': startupCmd,
         if (jumpHostId != null) 'jumpHostId': jumpHostId,
         if (forwards.isNotEmpty) 'forwards': forwards.map((f) => f.toJson()).toList(),
+        if (proxyHost.isNotEmpty) ...{'proxyHost': proxyHost, 'proxyPort': proxyPort, 'proxyUser': proxyUser},
       };
 
   factory Host.fromJson(Map<String, dynamic> j) => Host(
@@ -79,6 +91,9 @@ class Host {
             ?.whereType<Map>()
             .map((e) => ForwardRule.fromJson(e.cast<String, dynamic>()))
             .toList(),
+        proxyHost: (j['proxyHost'] ?? '') as String,
+        proxyPort: (j['proxyPort'] ?? 1080) as int,
+        proxyUser: (j['proxyUser'] ?? '') as String,
       );
 
   Host copy() => Host.fromJson(toJson());
@@ -132,7 +147,8 @@ class HostSecret {
   String password;
   String privateKey;
   String passphrase;
-  HostSecret({this.password = '', this.privateKey = '', this.passphrase = ''});
+  String proxyPassword;
+  HostSecret({this.password = '', this.privateKey = '', this.passphrase = '', this.proxyPassword = ''});
 }
 
 class Snippet {

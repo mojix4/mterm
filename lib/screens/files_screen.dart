@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../device_files.dart';
 import '../l10n.dart';
 import '../models.dart';
+import '../privacy.dart';
 import '../session.dart';
 import '../sftp_ops.dart';
 import '../ssh_connect.dart';
@@ -48,10 +49,10 @@ class FilesScreen extends StatelessWidget {
                       ListTile(
                         key: ValueKey('files-host-${h.id}'),
                         leading: HostAvatar(color: h.color),
-                        title: Text(h.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        title: Text(hostTitle(h), style: const TextStyle(fontWeight: FontWeight.w700)),
                         subtitle: Align(
                           alignment: AlignmentDirectional.centerStart,
-                          child: Ltr('sftp ${h.address}', style: TextStyle(color: p.muted, fontSize: 12.5)),
+                          child: Ltr('sftp ${hostAddress(h)}', style: TextStyle(color: p.muted, fontSize: 12.5)),
                         ),
                         trailing: Icon(Icons.chevron_right, color: p.muted),
                         onTap: () => openFiles(context, h),
@@ -160,6 +161,10 @@ class SftpBrowserState extends State<SftpBrowser> {
   void _fail(Object e) {
     if (!mounted) return;
     final s = S.of(context);
+    if (e is CriticalPathError) {
+      toast(context, s.f('criticalPathBlocked', {'path': normalizeRemote(e.path)}));
+      return;
+    }
     toast(context, s.f('opFailed', {'msg': e is SftpStatusError ? e.message : describeError(e, s)}));
   }
 
@@ -242,8 +247,16 @@ class SftpBrowserState extends State<SftpBrowser> {
     }
   }
 
+  /// Refuses system paths with a message (true = blocked).
+  bool _blocked(String p) {
+    if (!isCriticalPath(p)) return false;
+    toast(context, S.of(context).f('criticalPathBlocked', {'path': normalizeRemote(p)}));
+    return true;
+  }
+
   Future<void> rename(RemoteEntry e) async {
     final s = S.of(context);
+    if (_blocked(joinRemote(path, e.name))) return;
     final n = await _ask(s['rename'], s['newName'], initial: e.name);
     if (!_validName(n) || n == e.name) return;
     await _run(s['rename'], () => fs!.rename(joinRemote(path, e.name), joinRemote(path, n!)));
@@ -253,6 +266,7 @@ class SftpBrowserState extends State<SftpBrowser> {
   Future<void> delete(RemoteEntry e) async {
     final s = S.of(context);
     final dir = e.isDir && !e.isLink;
+    if (_blocked(joinRemote(path, e.name))) return;
     final ok = await confirm(
         context, s['delete'], s.f(dir ? 'deleteFolderBody' : 'deleteFileBody', {'name': e.name}),
         ok: s['delete'], danger: true);
@@ -346,7 +360,7 @@ class SftpBrowserState extends State<SftpBrowser> {
         appBar: AppBar(
           titleSpacing: 0,
           title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(widget.host.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text(hostTitle(widget.host), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             if (path.isNotEmpty) Ltr(path, style: TextStyle(fontSize: 12, color: p.muted)),
           ]),
           actions: [
@@ -476,7 +490,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
     setState(() => saving = true);
     try {
       final t = c.text;
-      await widget.fs.writeText(widget.path, t);
+      await widget.fs.writeTextAtomic(widget.path, t);
       saved = t;
       if (mounted) toast(context, s['fileSaved']);
       return true;

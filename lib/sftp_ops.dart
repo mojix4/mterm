@@ -129,11 +129,54 @@ class RemoteFs {
 
   Future<void> writeText(String path, String text) => writeBytes(path, Uint8List.fromList(utf8.encode(text)));
 
-  Future<void> mkdir(String path) => sftp.mkdir(path);
-  Future<void> rename(String from, String to) => sftp.rename(from, to);
+  /// Saves [data] to [path] without ever leaving a half-written file: writes
+  /// a temporary file next to it, copies the original's permissions (and
+  /// owner when allowed), then renames it over the original (posix-rename,
+  /// atomic on OpenSSH). The temporary file is removed when anything fails.
+  Future<void> writeBytesAtomic(String path, Uint8List data) async {
+    SftpFileAttrs? old;
+    try {
+      old = await sftp.stat(path);
+    } on SftpStatusError {
+      old = null; // new file
+    }
+    final dir = parentRemote(path);
+    final name = path.substring(path.lastIndexOf('/') + 1);
+    final tmp = joinRemote(dir, '.$name.mterm-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}.tmp');
+    try {
+      await writeBytes(tmp, data);
+      if (old?.mode != null) {
+        await sftp.setStat(tmp, SftpFileAttrs(mode: SftpFileMode.value(old!.mode!.value & 0xFFF)));
+      }
+      if (old?.userID != null && old?.groupID != null) {
+        try {
+          await sftp.setStat(tmp, SftpFileAttrs(userID: old!.userID, groupID: old.groupID));
+        } catch (_) {} // only root may give files away; keep ours then
+      }
+      await sftp.rename(tmp, path);
+    } catch (_) {
+      try {
+        await sftp.remove(tmp);
+      } catch (_) {}
+      rethrow;
+    }
+  }
 
-  /// Deletes a file, or a folder with everything in it.
+  Future<void> writeTextAtomic(String path, String text) =>
+      writeBytesAtomic(path, Uint8List.fromList(utf8.encode(text)));
+
+  Future<void> mkdir(String path) => sftp.mkdir(path);
+
+  /// Renames; system paths ([isCriticalPath]) are refused.
+  Future<void> rename(String from, String to) async {
+    if (isCriticalPath(from)) throw CriticalPathError(from);
+    await sftp.rename(from, to);
+  }
+
+  /// Deletes a file, or a folder with everything in it. System paths
+  /// ([isCriticalPath]) are refused.
   Future<void> delete(String path, {required bool isDir}) async {
+    if (isCriticalPath(path)) throw CriticalPathError(path);
     if (!isDir) return sftp.remove(path);
     for (final e in await list(path)) {
       final p = joinRemote(path, e.name);
@@ -143,6 +186,36 @@ class RemoteFs {
   }
 
   void close() => sftp.close();
+}
+
+/// System paths the Files screen never deletes or renames.
+const criticalPaths = {
+  '/', '/etc', '/etc/ssh', '/etc/passwd', '/etc/shadow', '/boot', '/usr', '/bin', '/sbin', '/lib', '/lib64',
+  '/var', '/root', '/home', '/proc', '/sys', '/dev',
+};
+
+/// [path] with duplicate slashes, "." and ".." resolved and no trailing slash.
+String normalizeRemote(String path) {
+  final parts = <String>[];
+  for (final p in path.split('/')) {
+    if (p.isEmpty || p == '.') continue;
+    if (p == '..') {
+      if (parts.isNotEmpty) parts.removeLast();
+    } else {
+      parts.add(p);
+    }
+  }
+  return '/${parts.join('/')}';
+}
+
+bool isCriticalPath(String path) => path.trim().isEmpty || criticalPaths.contains(normalizeRemote(path));
+
+/// Thrown instead of deleting or renaming a [criticalPaths] entry.
+class CriticalPathError implements Exception {
+  CriticalPathError(this.path);
+  final String path;
+  @override
+  String toString() => 'protected system path: $path';
 }
 
 /// "12 KB", "3.4 MB"… (ASCII, shown LTR).
