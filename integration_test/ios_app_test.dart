@@ -60,17 +60,17 @@ void main() {
     await t.pumpAndSettle();
     // like the iOS keyboard: one update per key, on top of the 2-space
     // placeholder the terminal keeps for backspace detection
-    Future<void> key(String c) async {
+    Future<void> press(String c) async {
       t.testTextInput.enterText('  $c');
       await t.pump();
     }
     for (final c in 'echo typed_X'.split('')) {
-      await key(c);
+      await press(c);
     }
     t.testTextInput.enterText(' '); // backspace removes the X
     await t.pump();
     for (final c in r'$((5+5))'.split('')) {
-      await key(c);
+      await press(c);
     }
     s.text('\r');
     await realWait(t, () => s.terminal.buffer.getText().contains('typed_10'));
